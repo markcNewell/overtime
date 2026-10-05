@@ -226,3 +226,25 @@ export function asList(x: unknown, keys: readonly string[]): unknown[] {
   const firstArray = Object.values(record).find((v) => Array.isArray(v));
   return Array.isArray(firstArray) ? firstArray : [];
 }
+
+/**
+ * Keep whole sentences while they fit in `max` words, so a long line is
+ * shortened without stopping mid-thought. A first sentence that is too
+ * long on its own is cut with an ellipsis.
+ *
+ * @param value - One line of text.
+ * @param max - Maximum words.
+ * @returns The shortened line.
+ */
+export function fitWords(value: string, max: number): string {
+  const count = (t: string): number => t.split(/\s+/).filter(Boolean).length;
+  if (count(value) <= max) return value;
+  const sentences = value.match(/[^.!?…]+[.!?…]+["')\]]*\s*|[^.!?…]+$/g) ?? [];
+  let out = '';
+  for (const sentence of sentences) {
+    if (count(out + sentence) > max) break;
+    out += sentence;
+  }
+  if (out.trim()) return out.trim();
+  return `${value.split(/\s+/).slice(0, max).join(' ')}…`;
+}

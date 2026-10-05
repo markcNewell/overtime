@@ -689,18 +689,14 @@ describe('sabotage in the persona', () => {
     expect(system).toMatch(/appeared out of nowhere/);
   });
 
-  it('has offline lines for broken code and self-chosen breaks', async () => {
-    const { brain } = brainWith([new Error('down'), new Error('down'),
-      new Error('down')]);
+  it('has offline lines for broken code', async () => {
+    const { brain } = brainWith([new Error('down'), new Error('down')]);
     const broke = await brain.think(sampleState(), 'Your code just broke for ' +
       'no reason: "Greek semicolons" - ... You didn\'t touch anything. React.');
     expect(broke.line.say).toMatch(/touch|worked|files|cosmic|messing/i);
     const back = await brain.think(sampleState(), 'You sat back down and your ' +
       'code is broken: "X" - y. It was fine when you left. React.');
     expect(back.line.say).toMatch(/touch|worked|files|cosmic|messing/i);
-    const rest = await brain.think(sampleState(), 'You decided you have ' +
-      'earned a short break and are heading to the coffee machine.');
-    expect(rest.line.say).toMatch(/earned|break|keyboard/i);
   });
 });
 

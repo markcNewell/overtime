@@ -17,6 +17,13 @@ import type {
   Worker,
 } from '../shared/types';
 import { bandOf, type Band } from './bands';
+import {
+  COFFEE_COURAGE,
+  COFFEE_DENIED,
+  COFFEE_TIMER,
+  coffeeAskAttempt,
+  type AskAttempt,
+} from './coffee';
 import { feelsPersecuted, firstName } from './persona';
 import { guessRequest, usefulAction } from './requests';
 import { pick, shuffle, type Rng } from './roll';
@@ -374,6 +381,23 @@ const LINE_GROUPS: readonly LineGroup[] = [
     'Hello! I am going to love it here. Mostly sure. Fairly sure.',
     'Nice desk. Why is the chair still warm?',
   ] },
+  { match: COFFEE_TIMER, kind: 'say', lines: [
+    'Coffee time. Stand up and stretch with me, boss. Doctor\'s orders.',
+    'Making a coffee. Grab some water while I\'m gone? Your spine says hi.',
+    'Brew o\'clock! Boss, roll your shoulders. I saw that slouch.',
+    'Off to the machine. Come stretch your legs, it\'s good for you.',
+    'Coffee run. When did you last stand up, boss? Exactly. Go on.',
+  ] },
+  { match: COFFEE_COURAGE, kind: 'say', lines: [
+    'Nobody said no. That\'s basically a yes. Going. Very quietly.',
+    'Courage found. Coffee bound. Please don\'t zap me.',
+    'I\'m going. If anyone asks, I was never here.',
+  ] },
+  { match: COFFEE_DENIED, kind: 'say', lines: [
+    'No coffee. Of course. Sorry I asked. Sorry I exist near the mug.',
+    'Understood! No coffee. I\'ll just... stare lovingly at the mug.',
+    'Right. No. Totally fine. My hands always shake like this.',
+  ] },
   { match: /tried to/i, kind: 'think', lines: [
     'Ha. Not today, management.',
     'Computer says no, apparently.',
@@ -392,11 +416,6 @@ const LINE_GROUPS: readonly LineGroup[] = [
       'Cosmic rays. It has to be cosmic rays. Or the coffee machine.',
       'Someone is messing with me. I can feel it in my semicolons.',
     ] },
-  { match: /decided|earned a|need a break/i, kind: 'say', lines: [
-    'I have earned this. Back in five. Maybe fifteen.',
-    'Quick break before my eyes fall out of my head.',
-    'Stepping away from the keyboard. It knows what it did.',
-  ] },
   { match: /assigned you/i, kind: 'say', lines: [
     'A new project! What could go wrong? Everything. Everything could.',
     'Love it. Hate it. Will build it. In that order.',
@@ -478,6 +497,29 @@ const WORK_LINES = [
   'This function is 400 lines long and I am its mother now.',
 ];
 
+/** Asking a scary boss for coffee: timid, anxious, then brave-ish. */
+export const COFFEE_ASKS: Record<AskAttempt, readonly string[]> = {
+  1: [
+    'Um, sorry, would it be okay if I maybe made a coffee?',
+    'Boss? Tiny question. Could I possibly... have a coffee? Only if okay.',
+  ],
+  2: [
+    'Sorry to ask again. Coffee? A small one. A very small one.',
+    'I hate to bother you twice, but... coffee? Please? Hands shaking.',
+  ],
+  3: [
+    'Okay. Deep breath. Boss, I am asking one last time. Coffee. Please.',
+    'Third time. I rehearsed this. May I. Have. A coffee?',
+  ],
+};
+
+/** After three or more refusals, coffee feels like something to earn. */
+const UNDESERVING_LINES = [
+  'No, you\'re right. Coffee is for people who\'ve earned it. I\'ll smell the mug.',
+  'Of course. I don\'t deserve beans. I barely deserve the chair.',
+  'Fine. I\'ll drink tap water and think about what I\'ve done.',
+];
+
 const PARANOID_LINES = [
   'Who moved my mouse? Nobody? That is exactly what they WANT me to think.',
   'The coffee machine is listening. It reports to HR. Probably.',
@@ -503,10 +545,16 @@ export function fallbackLine(
   state: GameState,
   rng: Rng,
 ): WorkerLine {
+  const worker = state.worker;
+  const attempt = coffeeAskAttempt(situation);
+  if (attempt !== null) return { say: pick(COFFEE_ASKS[attempt], rng) };
+  const undeserving = (worker?.ledger.coffeeDenials ?? 0) >= 3;
+  if (undeserving && COFFEE_DENIED.test(situation)) {
+    return { say: pick(UNDESERVING_LINES, rng) };
+  }
   const head = situation.slice(0, SITUATION_HEAD);
   const group = LINE_GROUPS.find((g) => g.match.test(head));
   if (group) return { [group.kind]: pick(group.lines, rng) };
-  const worker = state.worker;
   if (worker && feelsPersecuted(state, worker)) {
     return { think: pick(PARANOID_LINES, rng) };
   }

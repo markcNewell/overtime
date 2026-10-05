@@ -24,6 +24,8 @@ import {
   fallbackReleaseNotes,
 } from './fallback';
 import { BANDS } from './bands';
+import { mustSpeak, wordCap } from './coffee';
+import { fitWords } from './parse';
 import {
   fallbackComplaint,
   fallbackComplaintReply,
@@ -80,7 +82,7 @@ const CHAT_RUN: RunOptions = { priority: 'high', timeoutMs: 45_000 };
 
 const EMPTY_LEDGER = {
   shocks: 0, shouts: 0, praises: 0, bonuses: 0, kindChats: 0,
-  cruelChats: 0, coffees: 0, sabotages: 0,
+  cruelChats: 0, coffees: 0, sabotages: 0, coffeeDenials: 0,
 };
 
 /** Names and titles used in prompt examples, which Haiku likes to copy. */
@@ -103,6 +105,22 @@ function titlesToAvoid(state: GameState): string[] {
     ...(state.project ? [state.project.title] : []),
   ];
   return [...new Set(titles)];
+}
+
+/** Turn a thought into speech when the boss has to see it said. */
+function asSpoken(line: WorkerLine, speak: boolean): WorkerLine {
+  if (!speak || line.say || !line.think) return line;
+  const { think, ...rest } = line;
+  return { ...rest, say: think };
+}
+
+/** Shorten the spoken or thought text to a situation's word limit. */
+function capLine(line: WorkerLine, max: number | null): WorkerLine {
+  if (max === null) return line;
+  const out = { ...line };
+  if (out.say) out.say = fitWords(out.say, max);
+  if (out.think) out.think = fitWords(out.think, max);
+  return out;
 }
 
 /** Asks Claude for everything the worker says, writes and is. */
@@ -199,7 +217,8 @@ export class Brain {
       if (!worker) throw new Error('No worker to think');
       const raw = await this.runner.run(personaSystem(state, worker),
         thinkPrompt(situation, feelingNote(state, worker)), LINE_RUN);
-      const line = parseWorkerLine(raw, firstName(worker));
+      const line = capLine(asSpoken(parseWorkerLine(raw, firstName(worker)),
+        mustSpeak(situation)), wordCap(situation));
       this.lastError = undefined;
       return { line, offline: false };
     } catch (err) {

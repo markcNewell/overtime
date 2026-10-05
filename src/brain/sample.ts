@@ -36,7 +36,7 @@ export function sampleWorker(patch: Partial<Worker> = {}): Worker {
     xp: 50,
     ledger: {
       shocks: 3, shouts: 1, praises: 1, bonuses: 0,
-      kindChats: 1, cruelChats: 0, coffees: 1, sabotages: 0,
+      kindChats: 1, cruelChats: 0, coffees: 1, sabotages: 0, coffeeDenials: 0,
     },
     attitude: 'bitter',
     memories: [
@@ -53,7 +53,7 @@ export function sampleWorker(patch: Partial<Worker> = {}): Worker {
     recentShocks: [],
     recentPraises: [],
     recentSabotages: [],
-    minutesSinceBreak: 25,
+    coffeeTimer: 22,
     lowMoodMinutes: 0,
     ...patch,
   };

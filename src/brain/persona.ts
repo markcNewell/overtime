@@ -49,7 +49,7 @@ const ACTIVITY: Record<Activity, string> = {
   idle: 'at your desk with no project, killing time',
   working: 'typing away at the current project',
   stuck: 'stuck on a nasty problem',
-  coffee: 'on a coffee break at the coffee station',
+  coffee: 'at the coffee machine making a coffee',
   asleep: 'asleep at your desk',
   leaving: 'leaving for good',
 };
@@ -58,7 +58,7 @@ const ACTIVITY: Record<Activity, string> = {
  * What the worker is doing, in words.
  *
  * @param activity - The current activity.
- * @returns e.g. "on a coffee break at the coffee station".
+ * @returns e.g. "at the coffee machine making a coffee".
  */
 export function describeActivity(activity: Activity): string {
   return ACTIVITY[activity];
@@ -81,8 +81,14 @@ export function describeCondition(worker: Worker, now: number): string {
   }
   const recentShocks = worker.recentShocks.filter((t) => now - t < 600_000);
   if (recentShocks.length >= 4) extras.push('smoking slightly from shocks');
+  if ((worker.drinkingFor ?? 0) > 0) {
+    extras.push('sipping a fresh coffee at your desk');
+  }
   if (worker.wantsCoffeeSince !== undefined) {
-    extras.push('desperate for a coffee');
+    extras.push('nervously waiting to hear if you may have a coffee');
+  }
+  if ((worker.ledger.coffeeDenials ?? 0) >= 3) {
+    extras.push('starting to feel coffee is a privilege you do not deserve');
   }
   const doing = ACTIVITY[worker.activity];
   return [feelings.join(', '), doing, ...extras].join('; ');
@@ -133,6 +139,7 @@ export function describeLedger(ledger: Ledger): string {
     [ledger.kindChats, 'been kind to you in chat'],
     [ledger.cruelChats, 'been cruel to you in chat'],
     [ledger.coffees, 'sent you for coffee'],
+    [ledger.coffeeDenials ?? 0, 'refused you a coffee'],
   ];
   const done = deeds
     .filter(([n]) => n > 0)

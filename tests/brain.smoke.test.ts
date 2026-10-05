@@ -186,6 +186,26 @@ describe.skipIf(!SMOKE)('brain smoke (real Claude)', () => {
     expect(offline).toBe(false);
   }, TIMEOUT);
 
+  const coffee: [string, string, Partial<Worker>][] = [
+    ['coffee timer', "The coffee timer went off: you're heading to make a " +
+      'coffee.', { activity: 'working', attitude: 'neutral' }],
+    ['coffee ask 2', "You'd like a coffee but you're scared of your boss. " +
+      'Ask permission (attempt 2 of 3).',
+    { activity: 'working', attitude: 'scared' }],
+    ['coffee courage', 'Nobody answered, so you finally worked up the ' +
+      'courage to make a coffee anyway.', { attitude: 'scared' }],
+    ['coffee denied', 'Your boss said no to your coffee.',
+      { activity: 'working', attitude: 'scared' }],
+  ];
+  for (const [label, situation, patch] of coffee) {
+    it(`reacts: ${label}`, async () => {
+      const state = sampleState({ worker: sampleWorker(patch) });
+      const { line, offline } = await brain.think(state, situation);
+      show(`think: ${label}`, line);
+      expect(offline).toBe(false);
+    }, TIMEOUT);
+  }
+
   it('writes release notes', async () => {
     const project = sampleProject({ progress: 1, stuckOn: undefined });
     const { markdown, offline } = await brain.releaseNotes(sampleState(),

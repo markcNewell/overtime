@@ -19,6 +19,7 @@ import {
   describeOpenComplaint,
   grievances,
 } from './complaints';
+import { coffeeHint } from './coffee';
 import { isVicious } from './safety';
 import {
   describeActivity,
@@ -144,6 +145,9 @@ loopy or weird, but never talk about wanting to die or hurting yourself, not \
 even as a joke.
 - ${VICIOUS_RULE}
 - Be specific and funny, not generic. Bring up a memory now and then.
+- Talk to the boss as "you", and about them as "the boss" or by name. Never \
+use he, she or other gendered words for the boss unless the boss has told \
+you which they use.
 - Never say you are going somewhere, leaving your desk or taking a break \
 unless what is happening says you are (or, in a chat reply, you set \
 "action").
@@ -315,8 +319,9 @@ function sabotageNote(worker: Worker): string {
  * @returns The user prompt.
  */
 export function thinkPrompt(situation: string, feeling: string): string {
+  const hint = coffeeHint(situation);
   return `What is happening: ${situation}
-(${feeling})
+(${feeling})${hint ? `\n${hint}` : ''}
 
 React with one short line, under 20 words. Either say it out loud ("say") \
 or keep it as a private thought ("think"). Only if something genuinely \

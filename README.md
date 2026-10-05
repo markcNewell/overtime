@@ -27,9 +27,9 @@ Close the app and they go home; time stops until you open it again.
 
 | | |
 |---|---|
-| ![Boss menu](docs/screenshots/boss-menu.png) | ![Shock](docs/screenshots/shock.png) |
-| ![Hover card](docs/screenshots/hover-card.png) | ![Rage-quit](docs/screenshots/rage-quit.png) |
-| ![Hiring](docs/screenshots/office-hire.png) | ![Projects](docs/screenshots/office-projects.png) |
+| ![Boss menu](docs/screenshots/boss-menu.png) | ![Chat on the desk](docs/screenshots/desk-chat.png) |
+| ![Messing up their code](docs/screenshots/mess-up-code.png) | ![After an insult](docs/screenshots/react-cruel.png) |
+| ![Rage-quit](docs/screenshots/rage-quit.png) | ![Office panel: hiring](docs/screenshots/office-hire.png) |
 
 (The purple wallpaper is only for screenshots; on your desktop the scene floats
 over whatever is behind it.)

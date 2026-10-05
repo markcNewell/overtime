@@ -106,7 +106,8 @@ input[type='text']:focus {
 }
 
 .logo {
-  font-size: 30px;
+  width: 36px;
+  height: 36px;
 }
 
 h1 {
@@ -318,8 +319,18 @@ h3 {
 /* --------------------------------------------------------- projects */
 
 .stars {
-  color: var(--warn);
-  letter-spacing: 1px;
+  display: inline-flex;
+  gap: 1px;
+}
+
+.stars .on {
+  fill: var(--warn);
+}
+
+.stars .off {
+  fill: none;
+  stroke: var(--warn);
+  stroke-width: 1.6;
 }
 
 .difficulty {
@@ -412,6 +423,10 @@ th {
 
 /* ------------------------------------------------------------ staff */
 
+.staff .traits {
+  margin-top: 12px;
+}
+
 .staff {
   display: grid;
   grid-template-columns: 200px 1fr;
@@ -473,6 +488,7 @@ th {
 }
 
 .line {
+  align-self: flex-start;
   max-width: 75%;
   padding: 8px 12px;
   border-radius: 14px;

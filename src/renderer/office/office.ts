@@ -62,8 +62,16 @@ function bar(kind: string, value: number): string {
   return `<div class="bar ${kind}"><span style="width:${pct(value / 100)}%"></span></div>`;
 }
 
+const STAR_PATH =
+  'M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7L12 17.3 5.8 21l1.6-7L2 9.2l7.1-.6z';
+
+/** Drawn rather than ★ so it renders even without a symbol font. */
 function stars(d: Difficulty): string {
-  return '★'.repeat(d) + '☆'.repeat(5 - d);
+  const star = (on: boolean): string =>
+    `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">` +
+    `<path d="${STAR_PATH}" class="${on ? 'on' : 'off'}"/></svg>`;
+  const icons = [1, 2, 3, 4, 5].map((n) => star(n <= d)).join('');
+  return `<span class="stars" role="img" aria-label="${d} of 5">${icons}</span>`;
 }
 
 const DIFFICULTY_NAMES: Record<Difficulty, string> = {
@@ -209,7 +217,7 @@ function currentProjectHtml(p: Project, worker: Worker): string {
     : '';
   return `<div class="section card">
     <div class="who"><h3>Now: ${esc(p.title)}</h3>
-      <span class="stars" title="${DIFFICULTY_NAMES[p.difficulty]}">${stars(p.difficulty)}</span></div>
+      <span title="${DIFFICULTY_NAMES[p.difficulty]}">${stars(p.difficulty)}</span></div>
     <div class="muted">${esc(p.tagline)}</div>
     ${bar('progress', p.progress * 100)}
     <div class="muted">${pct(p.progress)}% · ${status[worker.activity] ?? ''} ${brief}</div>
@@ -239,7 +247,7 @@ function pitchCard(p: Pitch, worker: Worker): string {
     ? `<button data-action="open" data-path="${esc(p.filePath)}">Read / edit brief</button>`
     : '';
   return `<article class="card">
-    <div class="who"><span class="stars">${stars(p.difficulty)}</span>
+    <div class="who">${stars(p.difficulty)}
       <span class="difficulty">${DIFFICULTY_NAMES[p.difficulty]}</span></div>
     <h3>${esc(p.title)}</h3>
     <div class="muted">${esc(p.tagline)}</div>

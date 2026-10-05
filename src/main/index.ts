@@ -8,6 +8,7 @@ import {
   BrowserWindow,
   globalShortcut,
   ipcMain,
+  Menu,
   shell,
 } from 'electron';
 import { mkdirSync } from 'node:fs';
@@ -89,6 +90,9 @@ function broadcast(channel: string, payload: unknown): void {
 async function main(): Promise<void> {
   await app.whenReady();
   if (process.platform === 'darwin') app.dock?.hide();
+  // The office needs no File/Edit menu bar on Windows. macOS keeps the
+  // default menu because copy and paste shortcuts live in it.
+  else Menu.setApplicationMenu(null);
   await fixMacPath();
 
   const userData = app.getPath('userData');
@@ -129,13 +133,13 @@ async function main(): Promise<void> {
   const toggleOverlay = (): void => {
     if (overlay.isVisible()) overlay.hide();
     else overlay.showInactive();
-    tray.refresh();
+    tray?.refresh();
   };
 
   const updateSettings = (patch: Partial<Settings>): Settings => {
     const next = d.updateSettings(patch);
     applyOverlaySettings(overlay, next);
-    tray.refresh();
+    tray?.refresh();
     return next;
   };
 
@@ -145,15 +149,18 @@ async function main(): Promise<void> {
     void shell.openPath(dir);
   };
 
-  const tray = new OvertimeTray({
-    isOverlayVisible: () => overlay.isVisible(),
-    toggleOverlay,
-    openOffice: (tab) => office.open(tab),
-    settings: () => d.getState().settings,
-    updateSettings,
-    openFilesFolder,
-    quit: () => app.quit(),
-  });
+  // Headless test runs on Linux have no tray to attach a menu to.
+  const tray = process.env.OVERTIME_NO_TRAY
+    ? undefined
+    : new OvertimeTray({
+        isOverlayVisible: () => overlay.isVisible(),
+        toggleOverlay,
+        openOffice: (tab) => office.open(tab),
+        settings: () => d.getState().settings,
+        updateSettings,
+        openFilesFolder,
+        quit: () => app.quit(),
+      });
 
   registerIpc(d, office, overlay, updateSettings, runner);
   globalShortcut.register(TOGGLE_SHORTCUT, toggleOverlay);
@@ -232,7 +239,7 @@ if (!app.requestSingleInstanceLock()) {
   // Closing the office must not quit the app; it lives in the tray.
   app.on('window-all-closed', () => undefined);
   main().catch((err) => {
-    console.error('[overtime] failed to start', err);
+    console.error('[overtime] failed to start', err instanceof Error ? err.stack : err);
     app.quit();
   });
 }

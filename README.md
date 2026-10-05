@@ -32,7 +32,7 @@ over whatever is behind it.)
 - [Claude Code](https://claude.com/claude-code) installed and logged in
   (`claude` in a terminal should work). Overtime calls it in print mode with the
   cheapest model (Haiku), tools off, so it runs on your subscription without an
-  API key. Each line your worker says is one small call (~500 tokens in, ~50 out);
+  API key. Each line your worker says is one small call (~1,000 tokens in, ~50 out);
   expect a few dozen calls over a working day.
 
 ## Run it from source

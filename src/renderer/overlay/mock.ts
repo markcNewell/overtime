@@ -11,6 +11,7 @@
 import type { DirectAction, Effect, OvertimeApi } from '../../shared/ipc';
 import type {
   Activity,
+  Complaint,
   EndingKind,
   GameState,
   Leftover,
@@ -86,6 +87,18 @@ function worker(now: number, look: Look, patch: Partial<Worker> = {}): Worker {
   };
 }
 
+function complaint(patch: Partial<Complaint> = {}): Complaint {
+  return {
+    id: 'c0',
+    workerId: 'w-mohawk',
+    workerName: 'Priya Natarajan',
+    filedAt: Date.now() - 2 * MIN,
+    subject: 'Formal complaint: electrocution at my desk',
+    body: 'Dear Boss, I am writing to HR about the shocks.',
+    ...patch,
+  };
+}
+
 const MYSTERY = {
   at: 0.5,
   severity: 2 as const,
@@ -128,6 +141,7 @@ function state(now: number, patch: Partial<GameState> = {}): GameState {
     pastWorkers: [],
     deskLeftovers: [],
     releases: [],
+    complaints: [],
     chat: [],
     lastTickAt: now,
     settings: {
@@ -277,6 +291,27 @@ const SCENARIOS: Record<string, Scenario> = {
     ui: { effect: { type: 'react', tone: 'neutral' }, effectAt: SHOT_DELAY - 250 },
   },
   'monitor-tip': { build: at('working', LOOKS.priya), ui: { tip: 'monitor' } },
+  email: {
+    build: at('working', LOOKS.rex, { extra: { complaints: [complaint()] } }),
+    ui: { effect: { type: 'email' }, effectAt: 0 },
+  },
+  'email-read': {
+    build: at('working', LOOKS.rex, { extra: { complaints: [complaint({ readAt: Date.now() - MIN })] } }),
+  },
+  'email-many': {
+    build: at('working', LOOKS.rex, {
+      extra: {
+        complaints: [complaint({ id: 'c1' }), complaint({ id: 'c2' }), complaint({ id: 'c3', readAt: Date.now() })],
+        deskLeftovers: LEFTOVERS,
+      },
+    }),
+    ui: { tip: 'email' },
+  },
+  'email-replied': {
+    build: at('working', LOOKS.rex, {
+      extra: { complaints: [complaint({ readAt: Date.now() - MIN, reply: 'Sorry.', repliedAt: Date.now() })] },
+    }),
+  },
   hover: { build: at('working', LOOKS.priya), ui: { hover: true } },
   'hover-low': {
     build: at('working', LOOKS.rex, { patch: { stats: { energy: 15, mood: 22, sanity: 9 } } }),
@@ -400,6 +435,8 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
     hire: async () => undefined,
     rerollCandidates: async () => undefined,
     assign: async () => undefined,
+    readComplaint: (id) => console.log('[mock] readComplaint', id),
+    replyToComplaint: async (id, text) => console.log('[mock] replyToComplaint', id, text),
     openOffice: (tab) => console.log('[mock] openOffice', tab ?? '(default)'),
     openPath: (path) => console.log('[mock] openPath', path),
     setInteractive: (on) => console.log('[mock] setInteractive', on),

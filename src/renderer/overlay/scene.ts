@@ -335,15 +335,47 @@ function clipboard(): string {
   );
 }
 
+/** Where the old mug stands: in front of the monitor stand. */
+const MUG_X = 301;
+/** Where the email envelope leans: between the mouse and the monitor. */
+export const ENVELOPE = { x: 274, y: TOP };
+
 function leftoverMug(): string {
   const y = TOP - 11;
+  const x = MUG_X;
   return (
     `<g id="left-mug" class="hit" data-hit="leftover-mug">` +
-    `<path d="M267.5,${y + 3} q4.4,0 4.4,3 q0,3 -4.4,3" fill="none" stroke="${LINE}" stroke-width="3.4"/>` +
-    `<path d="M267.5,${y + 3} q4.4,0 4.4,3 q0,3 -4.4,3" fill="none" stroke="#ffffff" stroke-width="1.5"/>` +
-    rect(258, y, 10.5, 11, '#ffffff', `rx="1.8" ${stroke(1.3)}`) +
-    rect(258.7, y + 4, 9.1, 3, '#7c5cd6') +
+    `<path d="M${x + 9.5},${y + 3} q4.4,0 4.4,3 q0,3 -4.4,3" fill="none" stroke="${LINE}" stroke-width="3.4"/>` +
+    `<path d="M${x + 9.5},${y + 3} q4.4,0 4.4,3 q0,3 -4.4,3" fill="none" stroke="#ffffff" stroke-width="1.5"/>` +
+    rect(x, y, 10.5, 11, '#ffffff', `rx="1.8" ${stroke(1.3)}`) +
+    rect(x + 0.7, y + 4, 9.1, 3, '#7c5cd6') +
     `</g>`
+  );
+}
+
+/**
+ * An HR complaint waiting on the desk: a small envelope with an unread
+ * count, and a label that pops up when a new one lands. Drawn around its
+ * bottom centre so the pop can scale from where it stands.
+ */
+function envelope(): string {
+  return (
+    `<g id="envelope" class="hit" data-hit="email">` +
+    `<g transform="translate(${ENVELOPE.x} ${ENVELOPE.y})">` +
+    `<g class="env-label">` +
+    `<path d="M-38,-40 h76 a7.5,7.5 0 0 1 0,15 h-34 l-4,4.5 l-4,-4.5 h-34 a7.5,7.5 0 0 1 0,-15 Z" fill="${LINE}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke"/>` +
+    `<text x="0" y="-29.2" text-anchor="middle" font-family="${FONT}" font-size="9" font-weight="800" fill="#ffffff">Email received</text>` +
+    `</g>` +
+    `<g class="env-pop"><g transform="rotate(-9)">` +
+    rect(-9.5, -13, 19, 13, '#fffaf0', `rx="1.6" ${stroke(1.4)}`) +
+    `<path d="M-9,-12.4 L0,-5.4 L9,-12.4" fill="none" stroke="${LINE}" stroke-width="1.2" stroke-linejoin="round"/>` +
+    `<path d="M-9,-0.6 L-3,-6 M9,-0.6 L3,-6" fill="none" stroke="#c9bfae" stroke-width="0.9"/>` +
+    `<circle cx="0" cy="-5.6" r="2.1" fill="#e2574c" stroke="${LINE}" stroke-width="0.9"/>` +
+    `<g class="env-badge">` +
+    `<circle cx="9.5" cy="-13" r="5.2" fill="#e53935" stroke="${LINE}" stroke-width="1.2"/>` +
+    `<text id="env-count" x="9.5" y="-10.5" text-anchor="middle" font-family="${FONT}" font-size="7.2" font-weight="900" fill="#ffffff">1</text>` +
+    `</g>` +
+    `</g></g></g></g>`
   );
 }
 
@@ -367,6 +399,7 @@ function deskItems(): string {
     leftoverMug() +
     leftoverFolder() +
     clipboard() +
+    envelope() +
     `</g>`
   );
 }

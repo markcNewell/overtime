@@ -37,6 +37,8 @@ import { FLOOR_Y, PROGRESS_W, SCREEN_X, SCREEN_Y, sceneSvg } from './scene';
 /** How long a reaction to a chat reply shows on their face. */
 const REACT_MS = 4000;
 const GLITCH_MS = 1800;
+/** How long "Email received" shows next to the envelope. */
+const EMAIL_LABEL_MS = 4000;
 
 export interface Face {
   expression: Expression;
@@ -125,6 +127,7 @@ export class SceneView {
   private readonly effects: SVGGElement;
   private readonly effectsBack: SVGGElement;
   private readonly progress: SVGRectElement;
+  private readonly envCount: SVGTextElement;
 
   private state?: GameState;
   /** The worker being drawn; outlives `state.worker` until an ending ends. */
@@ -163,6 +166,7 @@ export class SceneView {
     this.effects = q(this.svg, '#effects');
     this.effectsBack = q(this.svg, '#effects-back');
     this.progress = q(this.svg, '#progress-fill');
+    this.envCount = q(this.svg, '#env-count');
     // Time-based bits (boost running out, an ending finishing after the
     // worker left the state) are checked once a second, cheaply.
     window.setInterval(() => this.tick(), 1000);
@@ -176,6 +180,7 @@ export class SceneView {
     this.setWorker(next, now);
     this.updateMonitor(state);
     this.updateLeftovers(state);
+    this.updateEmail(state);
     this.updateClasses(now);
     this.drawBody(now);
   }
@@ -274,6 +279,15 @@ export class SceneView {
         return;
       case 'react':
         this.react(e.tone, now);
+        return;
+      case 'email':
+        // `email-new` also shows the envelope in case the state with the
+        // complaint is a beat behind the effect.
+        this.sceneTransient.delete('email-new');
+        this.sceneTransient.delete('email-pop');
+        this.updateClasses(now);
+        this.flash('email-new', EMAIL_LABEL_MS, this.sceneTransient);
+        this.flash('email-pop', 800, this.sceneTransient);
         return;
       case 'ending':
         this.startEnding(e.kind, now);
@@ -482,6 +496,9 @@ export class SceneView {
     if (w && !s?.project && (w.activity === 'idle' || w.activity === 'working')) c.push('needs-project');
     if (s?.brainStatus === 'thinking' || (this.awaiting && w)) c.push('brain-thinking');
     if (w && isMysteryStuck(s)) c.push('mystery');
+    const complaints = s?.complaints ?? [];
+    if (complaints.some((m) => !m.reply) || this.sceneTransient.has('email-new')) c.push('has-email');
+    if (complaints.some((m) => !m.readAt)) c.push('email-unread');
     c.push(...this.sceneTransient);
     if (s?.brainStatus === 'offline') c.push('brain-offline');
     for (const l of s?.deskLeftovers ?? []) c.push(LEFTOVER_CLASS[l.kind]);
@@ -520,6 +537,14 @@ export class SceneView {
         ? `Stuck on "${stuck.title}"`
         : `${p.title} · ${pct}%`;
     this.tips.set('monitor', `Mess up their code\n${detail}`);
+  }
+
+  private updateEmail(state: GameState): void {
+    const unread = state.complaints.filter((m) => !m.readAt).length;
+    const label = unread > 9 ? '9+' : String(unread);
+    if (this.envCount.textContent !== label) this.envCount.textContent = label;
+    const tip = unread === 0 ? 'Email received' : unread === 1 ? '1 unread email' : `${unread} unread emails`;
+    this.tips.set('email', tip);
   }
 
   private updateLeftovers(state: GameState): void {

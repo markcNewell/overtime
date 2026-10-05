@@ -94,11 +94,14 @@ const ZOOMS = {
   hover: [150, 150, 230, 150],
   'chat-reply': [0, 120, 380, 170],
   menu: [130, 110, 250, 160],
+  email: [200, 180, 150, 100],
+  'email-read': [200, 180, 150, 100],
+  'email-many': [200, 180, 150, 100],
   'menu-fire': [130, 110, 250, 160],
 };
 
 // New-feature states shot again over a loud wallpaper, to check legibility.
-const BUSY = ['menu', 'menu-fire', 'chat-reply', 'chat-coffee', 'glitch', 'mystery-stuck', 'react-kind', 'react-cruel', 'hover', 'monitor-tip'];
+const BUSY = ['menu', 'menu-fire', 'chat-reply', 'chat-coffee', 'glitch', 'mystery-stuck', 'react-kind', 'react-cruel', 'hover', 'monitor-tip', 'email', 'email-read'];
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -193,6 +196,7 @@ app.whenReady().then(async () => {
     ['interact-sabotage', 'working', [...click(300, 232)], 450],
     ['interact-sabotage-after', 'working', [...click(300, 232)], 2400],
     ['interact-monitor-tip', 'working', [['mouseMoved', 300, 232]], 300],
+    ['interact-email-tip', 'email-many', [['mouseMoved', 274, 254]], 300],
     ['interact-hover', 'working', [[ 'mouseMoved', 203, 250 ]], 700],
     ['interact-menu', 'working', [...click(354, 240)], 400],
     ['interact-zap', 'working', [[ 'mouseMoved', 203, 250 ], [ 'mousePressed', 203, 250 ], [ 'mouseReleased', 203, 250 ]], 260],

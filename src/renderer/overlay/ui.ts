@@ -283,6 +283,9 @@ export class OverlayUi {
       case 'monitor':
         this.sabotage();
         return;
+      case 'email':
+        this.office('inbox');
+        return;
     }
   }
 

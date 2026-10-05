@@ -283,6 +283,55 @@ body.preview-bg-light {
   100% { transform: translate(calc(var(--dx) - 6px), calc(var(--dy) + 14px)) scale(1.15); opacity: 0; }
 }
 
+/* ------------------------------------------------------- HR complaints */
+
+#envelope,
+.env-label,
+.env-badge {
+  display: none;
+}
+#scene.has-email #envelope,
+#scene.email-unread .env-badge,
+#scene.email-new .env-label {
+  display: inline;
+}
+#envelope.hover .env-label {
+  display: none;
+}
+#envelope.hover .env-pop {
+  transform: translateY(-2px) scale(1.12);
+}
+.env-pop {
+  transition: transform 0.12s ease-out;
+}
+#scene.email-pop .env-pop {
+  animation: env-pop 0.75s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+@keyframes env-pop {
+  0% { transform: translateY(-18px) scale(0.2); }
+  45% { transform: translateY(0) scale(1.25, 0.85); }
+  65% { transform: translateY(-5px) scale(0.95, 1.08); }
+  100% { transform: none; }
+}
+.env-label {
+  animation: env-label 4s ease-out forwards;
+}
+@keyframes env-label {
+  0% { transform: translateY(6px) scale(0.6); opacity: 0; }
+  8% { transform: translateY(0) scale(1.08); opacity: 1; }
+  14% { transform: none; }
+  88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+#scene.email-unread .env-badge {
+  animation: badge-throb 2.4s ease-in-out infinite;
+  transform-origin: 9.5px -13px;
+}
+@keyframes badge-throb {
+  0%, 80%, 100% { transform: scale(1); }
+  88% { transform: scale(1.25); }
+}
+
 /* ---------------------------------------------------- the rage-quit flip */
 
 #desk-body {
@@ -311,7 +360,7 @@ body.preview-bg-light {
 #monitor { transform-origin: 298px 247px; }
 #keyboard { transform-origin: 234px 260px; }
 #clipboard { transform-origin: 354px 246px; }
-#left-mug { transform-origin: 263px 257px; }
+#left-mug { transform-origin: 306px 257px; }
 #left-folder { transform-origin: 327px 253px; }
 @keyframes fly-monitor {
   0% { transform: none; }

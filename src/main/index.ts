@@ -53,6 +53,7 @@ const ACTIONS: DirectAction['type'][] = [
   'coffee',
   'bonus',
   'fire',
+  'sabotage',
 ];
 
 const files: FilesLike = {
@@ -115,7 +116,7 @@ async function main(): Promise<void> {
   const brain = new Brain(runner);
 
   const overlay = createOverlay(initial.settings);
-  const office = new OfficeWindow();
+  const office = new OfficeWindow(overlay, initial.settings);
 
   const d = new Director(initial, {
     brain,
@@ -125,7 +126,7 @@ async function main(): Promise<void> {
     publish: (state) => broadcast(CHANNELS.state, state),
     effect: (effect) => broadcast(CHANNELS.effect, effect),
     save: (state) => saveState(savePath, state),
-    openOffice: (tab) => office.open(tab),
+    openOffice: (tab) => office.open(tab, false),
     log: (message, err) => console.error(`[overtime] ${message}`, err ?? ''),
   });
   director = d;
@@ -139,6 +140,7 @@ async function main(): Promise<void> {
   const updateSettings = (patch: Partial<Settings>): Settings => {
     const next = d.updateSettings(patch);
     applyOverlaySettings(overlay, next);
+    office.applySettings(next);
     tray?.refresh();
     return next;
   };
@@ -173,7 +175,7 @@ async function main(): Promise<void> {
   app.on('will-quit', () => globalShortcut.unregisterAll());
 
   d.start();
-  if (!d.getState().worker) office.open('hire');
+  if (!d.getState().worker) office.open('hire', false);
 }
 
 function registerIpc(

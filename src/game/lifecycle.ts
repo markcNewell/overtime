@@ -74,6 +74,7 @@ export function hire(state: GameState, candidateId: string, now: number): GameSt
       kindChats: 0,
       cruelChats: 0,
       coffees: 0,
+      sabotages: 0,
     },
     attitude: 'neutral',
     memories: next.deskLeftovers.map((item) => deskMemory(item, now)),
@@ -82,6 +83,8 @@ export function hire(state: GameState, candidateId: string, now: number): GameSt
     activitySince: now,
     recentShocks: [],
     recentPraises: [],
+    recentSabotages: [],
+    minutesSinceBreak: 0,
     lowMoodMinutes: 0,
   };
   next.candidates = [];
@@ -239,6 +242,7 @@ export function goHome(state: GameState, now: number): GameState {
   delete worker.boost;
   delete worker.wantsCoffeeSince;
   worker.lowMoodMinutes = 0;
+  worker.minutesSinceBreak = 0;
   pruneRecent(worker, now);
   resume(worker, next.project, now);
   // Nobody is listening for events here; the next tick reports from scratch.

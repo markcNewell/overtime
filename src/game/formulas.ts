@@ -149,7 +149,7 @@ export function stuckMinutes(
  *
  * @param gap - Overload of the project.
  * @param stats - Current stats.
- * @param rushed - True while a shock or shout boost is active.
+ * @param rushed - True while a shout boost is active.
  * @returns 0-1.
  */
 export function minuteQuality(gap: number, stats: Stats, rushed: boolean): number {

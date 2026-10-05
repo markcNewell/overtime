@@ -21,6 +21,7 @@ import {
   MAX_MEMORIES,
   MS_PER_MINUTE,
   RECENT_WINDOW_MINUTES,
+  WAKE_ENERGY,
 } from './tuning';
 
 /**
@@ -55,7 +56,7 @@ export function resume(worker: Worker, project: Project | undefined, t: number):
 }
 
 /**
- * Send them to the coffee station.
+ * Send them to the coffee station. Any break resets the break clock.
  *
  * @param worker - Changed in place.
  * @param t - Epoch ms the break starts.
@@ -64,8 +65,35 @@ export function startCoffee(worker: Worker, t: number): void {
   worker.activity = 'coffee';
   worker.activitySince = t;
   worker.coffeeUntil = t + COFFEE_BREAK_MINUTES * MS_PER_MINUTE;
+  worker.minutesSinceBreak = 0;
   delete worker.wantsCoffeeSince;
   nudge(worker.stats, { mood: COFFEE_MOOD });
+}
+
+/**
+ * Get them back to the desk: wake a sleeper or end a coffee break.
+ * Anyone already at the desk (or arriving) is left as they are.
+ *
+ * @param worker - Changed in place.
+ * @param project - The current project, if any.
+ * @param t - Epoch ms.
+ * @param events - `woke-up` is pushed here when they were asleep.
+ */
+export function backToWork(
+  worker: Worker,
+  project: Project | undefined,
+  t: number,
+  events: GameEvent[],
+): void {
+  if (worker.activity === 'asleep') {
+    nudge(worker.stats, { energy: WAKE_ENERGY });
+    resume(worker, project, t);
+    events.push({ type: 'woke-up' });
+    return;
+  }
+  if (worker.activity !== 'coffee') return;
+  delete worker.coffeeUntil;
+  resume(worker, project, t);
 }
 
 /**
@@ -106,7 +134,7 @@ export function refreshAttitude(worker: Worker, events: GameEvent[]): void {
 }
 
 /**
- * Apply a speed boost; a weaker one never cuts short a stronger one.
+ * Apply a speed boost, replacing any current one.
  *
  * @param worker - Changed in place.
  * @param multiplier - Speed multiplier.
@@ -119,8 +147,6 @@ export function applyBoost(
   minutes: number,
   t: number,
 ): void {
-  const current = worker.boost;
-  if (current && current.until > t && current.multiplier > multiplier) return;
   worker.boost = { multiplier, until: t + minutes * MS_PER_MINUTE };
 }
 
@@ -137,15 +163,19 @@ export function boostAt(worker: Worker, t: number): number {
 }
 
 /**
- * Drop shock and praise times that no longer matter.
+ * Drop shock, praise and sabotage times that no longer matter.
  *
  * @param worker - Changed in place.
  * @param now - Epoch ms.
  */
 export function pruneRecent(worker: Worker, now: number): void {
   const cutoff = now - RECENT_WINDOW_MINUTES * MS_PER_MINUTE;
-  worker.recentShocks = worker.recentShocks.filter((at) => at >= cutoff);
-  worker.recentPraises = worker.recentPraises.filter((at) => at >= cutoff);
+  const keep = (times: number[] | undefined): number[] =>
+    (times ?? []).filter((at) => at >= cutoff);
+  worker.recentShocks = keep(worker.recentShocks);
+  worker.recentPraises = keep(worker.recentPraises);
+  // Saves from before sabotage existed have no list yet.
+  worker.recentSabotages = keep(worker.recentSabotages);
 }
 
 /**

@@ -84,26 +84,68 @@ export function setOverlayInteractive(win: BrowserWindow, on: boolean): void {
   win.setIgnoreMouseEvents(!on, { forward: true });
 }
 
+/** The office panel's size, including a margin for its drop shadow. */
+const PANEL = { width: 396, height: 500, minHeight: 360 } as const;
+/** How much of the overlay's top is empty sky the panel may overlap. */
+const OVERLAY_SKY = 40;
+
 /**
- * The office is created on first use and hidden, not destroyed, on close so
- * reopening it is instant.
+ * Where the office panel goes: directly above the corner scene if the screen
+ * is tall enough, otherwise beside it, so it always looks attached.
+ */
+function panelBounds(overlay: BrowserWindow): Electron.Rectangle {
+  const o = overlay.getBounds();
+  const area = screen.getDisplayMatching(o).workArea;
+  const right = o.x + o.width;
+  const above = o.y + OVERLAY_SKY - area.y;
+  if (above >= PANEL.minHeight + 20) {
+    const height = Math.min(PANEL.height, above);
+    return { x: right - PANEL.width, y: o.y + OVERLAY_SKY - height, width: PANEL.width, height };
+  }
+  const height = Math.min(PANEL.height, o.y + o.height - area.y);
+  return { x: o.x - PANEL.width, y: o.y + o.height - height, width: PANEL.width, height };
+}
+
+/**
+ * The office: a small panel that pops up next to the worker, like a tray
+ * menu. Created on first use and hidden, not destroyed, so it reopens
+ * instantly. It hides itself when you click away.
  */
 export class OfficeWindow {
   private win: BrowserWindow | null = null;
   private quitting = false;
 
-  /** Show the office on `tab`, creating it if needed. */
-  open(tab: OfficeTab): void {
+  constructor(
+    private readonly overlay: BrowserWindow,
+    private settings: Settings,
+  ) {}
+
+  /**
+   * Show the office on `tab`. `focus` is false when the game opens it by
+   * itself, so it never steals the keyboard from whatever you're typing in.
+   */
+  open(tab: OfficeTab, focus = true): void {
     const win = this.win ?? this.create();
     const send = (): void => win.webContents.send(CHANNELS.officeTab, tab);
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
     else send();
-    win.show();
-    win.focus();
+    win.setBounds(panelBounds(this.overlay));
+    if (focus) {
+      win.show();
+      win.focus();
+    } else if (!win.isVisible()) {
+      win.showInactive();
+    }
   }
 
   get window(): BrowserWindow | null {
     return this.win;
+  }
+
+  /** Keep the panel's stacking and screen-share hiding in step with the overlay. */
+  applySettings(settings: Settings): void {
+    this.settings = settings;
+    if (this.win && !this.win.isDestroyed()) applyOverlaySettings(this.win, settings);
   }
 
   /** Let the window really close when the app quits. */
@@ -113,21 +155,33 @@ export class OfficeWindow {
 
   private create(): BrowserWindow {
     const win = new BrowserWindow({
-      width: 820,
-      height: 640,
-      minWidth: 640,
-      minHeight: 480,
-      title: 'Overtime: The Office',
+      ...panelBounds(this.overlay),
+      frame: false,
+      transparent: true,
+      backgroundColor: '#00000000',
+      hasShadow: false,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
       show: false,
-      autoHideMenuBar: true,
-      backgroundColor: '#f6f1e7',
+      title: 'Overtime: The Office',
       webPreferences,
     });
+    applyOverlaySettings(win, this.settings);
+    if (process.platform === 'darwin') {
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
     void win.loadFile(join(__dirname, 'renderer/office/index.html'));
     win.on('close', (event) => {
       if (this.quitting) return;
       event.preventDefault();
       win.hide();
+    });
+    // Like a tray menu: click anywhere else and it tucks itself away.
+    win.on('blur', () => {
+      if (!this.quitting && !win.isDestroyed()) win.hide();
     });
     this.win = win;
     return win;

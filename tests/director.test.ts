@@ -49,6 +49,11 @@ function setup(initial?: GameState) {
   const effects: Effect[] = [];
   const opened: OfficeTab[] = [];
   let offline = false;
+  let chatReply: Awaited<ReturnType<BrainLike['chat']>>['reply'] = {
+    say: 'Thanks boss',
+    tone: 'kind',
+    remember: 'Boss is nice',
+  };
   const brain: BrainLike = {
     candidates: async () => ({
       candidates: [candidate('a'), candidate('b'), candidate('c')],
@@ -61,7 +66,7 @@ function setup(initial?: GameState) {
     },
     chat: async (_s, message) => {
       calls.chat.push(message);
-      return { reply: { say: 'Thanks boss', tone: 'kind', remember: 'Boss is nice' }, offline };
+      return { reply: chatReply, offline };
     },
     releaseNotes: async () => ({ markdown: '# Notes', offline }),
     farewell: async () => ({
@@ -107,6 +112,9 @@ function setup(initial?: GameState) {
     },
     setOffline: (v: boolean) => {
       offline = v;
+    },
+    setChatReply: (reply: typeof chatReply) => {
+      chatReply = reply;
     },
   };
 }
@@ -253,4 +261,70 @@ describe('Director', () => {
     t2.director.stop();
     expect(t2.director.getState().worker!.stats.energy).toBeGreaterThan(50);
   });
+
+  it('a chat reply that agrees to a break really sends them for coffee', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.advance(10_000);
+    t.director.tick();
+    t.setChatReply({ say: 'Oh thank you, yes!', tone: 'kind', action: 'coffee' });
+    await t.director.chat('Go take a break');
+    t.director.stop();
+    const s = t.director.getState();
+    expect(s.worker?.activity).toBe('coffee');
+    expect(t.effects).toContainEqual({ type: 'react', tone: 'kind' });
+    expect(s.bubble?.text).toBe('Oh thank you, yes!');
+  });
+
+  it('a chat reply without an action leaves them where they are', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.advance(10_000);
+    t.director.tick();
+    t.setChatReply({ say: 'Be back in five', tone: 'neutral' });
+    await t.director.chat('Fancy a coffee?');
+    t.director.stop();
+    expect(t.director.getState().worker?.activity).not.toBe('coffee');
+  });
+
+  it('messing up their code glitches the screen and gets a reaction', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.advance(10_000);
+    t.director.tick();
+    await settle();
+    const before = t.calls.think.length;
+    t.director.act({ type: 'sabotage' });
+    await settle();
+    t.director.stop();
+    expect(t.effects).toContainEqual({ type: 'glitch' });
+    expect(t.calls.think.slice(before).some((s) => s.startsWith('Your code just broke'))).toBe(
+      true,
+    );
+    expect(t.director.getState().project?.hardParts.some((h) => h.mystery)).toBe(true);
+  });
+
+  it('a bug planted during a coffee break is discovered on their return', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.advance(10_000);
+    t.director.tick();
+    t.director.act({ type: 'coffee' });
+    await settle();
+    const before = t.calls.think.length;
+    t.director.act({ type: 'sabotage' });
+    await settle();
+    expect(t.calls.think.slice(before).some((s) => s.startsWith('Your code just broke'))).toBe(
+      false,
+    );
+    // Coffee breaks are minutes long; tick through to the end of it.
+    for (let i = 0; i < 12 * 12; i++) {
+      t.advance(5_000);
+      t.director.tick();
+    }
+    await settle();
+    t.director.stop();
+    expect(t.calls.think.slice(before).some((s) => s.startsWith('You sat back down'))).toBe(true);
+  });
 });
+

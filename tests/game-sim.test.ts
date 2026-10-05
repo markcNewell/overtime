@@ -315,14 +315,14 @@ describe('energy, sleep and coffee', () => {
     expect(woken.state.worker!.stats.energy).toBeCloseTo(15, 6);
   });
 
-  it('coffee refills energy for six minutes then they go back to work', () => {
-    const tired = patchStats(working(), { energy: 20 });
+  it('coffee refills energy for seven minutes then they go back to work', () => {
+    const tired = patchStats(working(), { energy: 10 });
     const sent = act(tired, { type: 'coffee' }, T0).state;
     expect(sent.worker!.activity).toBe('coffee');
-    const r = run(sent, 7, (e) => e.type === 'coffee-done');
+    const r = run(sent, 8, (e) => e.type === 'coffee-done');
     expect(types(r.events)).toEqual(['coffee-done']);
-    expect((r.now - T0) / MIN).toBeCloseTo(6, 1);
-    expect(r.state.worker!.stats.energy).toBeCloseTo(20 + 6 * 12, 6);
+    expect((r.now - T0) / MIN).toBeCloseTo(7, 6);
+    expect(r.state.worker!.stats.energy).toBeCloseTo(10 + 7 * 12, 6);
     expect(r.state.worker!.activity).toBe('working');
   });
 
@@ -330,48 +330,77 @@ describe('energy, sleep and coffee', () => {
     const state = working({ hardParts: [part(0.01)] });
     const hit = run(state, 30, (e) => e.type === 'hard-part-hit').state;
     const sent = act(hit, { type: 'coffee' }, hit.lastTickAt).state;
-    const back = run(sent, 7, (e) => e.type === 'coffee-done').state;
+    const back = run(sent, 8, (e) => e.type === 'coffee-done').state;
     expect(back.worker!.activity).toBe('stuck');
     expect(back.project!.stuckOn).toBe(0);
   });
 
-  it('ask for coffee once when tired', () => {
-    const state = patchStats(working(), { energy: 25.2 });
-    const r = run(state, 10);
+  it('ask for coffee once when energy drops below 50', () => {
+    const state = patchStats(working(), { energy: 50.2 });
+    const r = run(state, 4);
     expect(types(r.events).filter((t) => t === 'wants-coffee')).toHaveLength(1);
     expect(r.state.worker!.wantsCoffeeSince).toBeDefined();
   });
 
-  it('go anyway after 15 ignored minutes when miserable', () => {
-    const state = patchStats(working(), { energy: 24, mood: 10 });
-    const r = run(state, 20, (e) => e.type === 'took-coffee-anyway');
+  it('go anyway 5 minutes after asking, whatever their mood', () => {
+    const state = patchStats(working(), { energy: 49, mood: 90 });
+    const r = run(state, 10, (e) => e.type === 'took-coffee-anyway');
     const asked = r.events.find((t) => t.event.type === 'wants-coffee')!.at;
     const went = r.events.find((t) => t.event.type === 'took-coffee-anyway')!.at;
-    expect((went - asked) / MIN).toBeCloseTo(15, 1);
+    expect((went - asked) / MIN).toBeCloseTo(5, 6);
     expect(r.state.worker!.activity).toBe('coffee');
     expect(r.state.worker!.ledger.coffees).toBe(0);
   });
 
-  it('wait patiently when in a fair mood and not bitter', () => {
-    const state = patchStats(working(), { energy: 24, mood: 60 });
-    const r = run(state, 25);
-    expect(types(r.events)).not.toContain('took-coffee-anyway');
+  it('take a break of their own after 60 / stamina work minutes', () => {
+    const state = working({ difficulty: 5, hardParts: [] }, {
+      level: 'lead',
+      traits: { stamina: 1.2, resilience: 1, talent: 1 },
+    });
+    const r = run(state, 60, (e) => e.type === 'took-break');
+    expect(types(r.events)).toEqual(['took-break']);
+    expect((r.now - T0) / MIN).toBeCloseTo(50, 6);
+    expect(r.state.worker!.activity).toBe('coffee');
+    expect(r.state.worker!.minutesSinceBreak).toBe(0);
+    expect(r.state.worker!.ledger.coffees).toBe(0);
   });
 
-  it('go anyway when bitter, even with mood above the line', () => {
-    // Overloaded, so mood hovers in the low 30s instead of recovering.
-    const state = working({ difficulty: 5, hardParts: [] }, { level: 'junior' });
-    const ledger = { ...state.worker!.ledger, shouts: 5 };
-    const bitter = patchWorker(patchStats(state, { energy: 24, mood: 34 }), { ledger });
-    const r = run(bitter, 20, (e) => e.type === 'took-coffee-anyway');
-    const went = r.events.findIndex((t) => t.event.type === 'took-coffee-anyway');
-    expect(went).toBeGreaterThan(0);
-    const moods = r.events.slice(0, went).map((t) => t.event);
-    expect(moods.filter((e) => e.type === 'attitude-changed').at(-1)).toMatchObject({
-      to: 'bitter',
+  it('only count working and stuck minutes towards a break', () => {
+    const idle = run(hired(), 90).state.worker!;
+    expect(idle.minutesSinceBreak).toBe(0);
+    const asleep = patchWorker(working(), { activity: 'asleep', minutesSinceBreak: 10 });
+    expect(run(asleep, 30).state.worker!.minutesSinceBreak).toBe(10);
+  });
+
+  it('scared workers never dare take a break', () => {
+    const state = working();
+    const ledger = { ...state.worker!.ledger, shocks: 3 };
+    const scared = patchWorker(patchStats(state, { energy: 49 }), {
+      ledger,
+      attitude: 'scared',
+      minutesSinceBreak: 59,
     });
-    // Coffee added 3, so before the break mood was still above 30.
-    expect(r.state.worker!.stats.mood - 3).toBeGreaterThanOrEqual(30);
+    const r = run(scared, 30);
+    expect(types(r.events)).toContain('wants-coffee');
+    expect(types(r.events)).not.toContain('took-coffee-anyway');
+    expect(types(r.events)).not.toContain('took-break');
+    expect(r.state.worker!.minutesSinceBreak).toBeCloseTo(89, 6);
+  });
+
+  it('copes with saves from before breaks and sabotage', () => {
+    const state = working();
+    const old = structuredClone(state) as unknown as {
+      worker: Record<string, unknown> & { ledger: Record<string, unknown> };
+    };
+    delete old.worker.minutesSinceBreak;
+    delete old.worker.recentSabotages;
+    delete old.worker.ledger.sabotages;
+    const ticked = run(old as unknown as GameState, 2).state;
+    expect(ticked.worker!.minutesSinceBreak).toBeCloseTo(2, 6);
+    expect(ticked.worker!.recentSabotages).toEqual([]);
+    const broken = act(ticked, { type: 'sabotage' }, ticked.lastTickAt);
+    expect(broken.state.worker!.ledger.sabotages).toBe(1);
+    expect(broken.events[0]).toEqual({ type: 'code-broken', index: 0 });
   });
 });
 

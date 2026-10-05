@@ -11,14 +11,14 @@ import {
   sanityFactor,
   sanityRate,
   skillFactor,
-  stuckMinutes,
   workDrain,
   xpGain,
 } from './formulas';
 import { gapFor, grade, levelFor, levelRank } from './levels';
+import { hitHardPart, nextHardPart } from './project';
 import {
   ARRIVE_MS,
-  COFFEE_ANYWAY_MOOD,
+  BREAK_EVERY_MINUTES,
   COFFEE_ASK_ENERGY,
   COFFEE_IGNORED_MINUTES,
   COFFEE_REFILL,
@@ -26,6 +26,7 @@ import {
   MAX_TICK_MINUTES,
   MOOD_DRIFT,
   MS_PER_MINUTE,
+  MYSTERY_SANITY_DRAIN,
   RAGE_MINUTES,
   RAGE_MOOD,
   STUCK_MOOD_PER_SEVERITY,
@@ -108,7 +109,7 @@ function step(s: Step): void {
   updateMood(s);
   updateSanity(s);
   fallAsleepIfSpent(s);
-  handleCoffeeCraving(s);
+  handleBreaks(s);
   refreshAttitude(s.worker, s.events);
   checkEndings(s);
 }
@@ -154,7 +155,7 @@ function stepWorking(s: Step): void {
   if (next !== undefined && part && part.at <= reach) {
     // Land exactly on the hard part so it bites where the brief says.
     project.progress = Math.max(project.progress, part.at);
-    hitHardPart(s, project, next, gap);
+    hitHardPart(project, s.worker, next, s.t, s.events);
     return;
   }
   project.progress = Math.min(1, reach);
@@ -176,8 +177,13 @@ function stepStuck(s: Step): void {
   project.progress = Math.max(project.progress, reach);
   doDeskWork(s, project, gap);
 
-  const severity = project.hardParts[project.stuckOn]?.severity ?? 1;
+  const part = project.hardParts[project.stuckOn];
+  const severity = part?.severity ?? 1;
   nudge(s.worker.stats, { mood: -STUCK_MOOD_PER_SEVERITY * severity * s.minutes });
+  // A bug that came from nowhere is worse for the nerves than an honest one.
+  if (part?.mystery) {
+    nudge(s.worker.stats, { sanity: -MYSTERY_SANITY_DRAIN * s.minutes });
+  }
   project.stuckMinutesLeft = (project.stuckMinutesLeft ?? 0) - s.minutes;
   if (project.stuckMinutesLeft > EPSILON) return;
 
@@ -188,12 +194,14 @@ function stepStuck(s: Step): void {
   s.events.push({ type: 'hard-part-cleared', index });
 }
 
-/** Score the minute's quality and pay for it in energy. */
+/** Score the minute's quality, pay for it in energy, run the break clock. */
 function doDeskWork(s: Step, project: Project, gap: number): void {
   const { worker } = s;
   const rushed = boostAt(worker, s.t) > 1;
   project.qualitySum += minuteQuality(gap, worker.stats, rushed) * s.minutes;
   project.workMinutes += s.minutes;
+  // Saves from before breaks existed have no clock yet.
+  worker.minutesSinceBreak = (worker.minutesSinceBreak ?? 0) + s.minutes;
   const drain = workDrain(project.difficulty, worker.traits.stamina);
   nudge(worker.stats, { energy: -drain * s.minutes });
 }
@@ -206,25 +214,6 @@ function progressPerMinute(s: Step, project: Project, gap: number): number {
     sanityFactor(stats.sanity) *
     boostAt(s.worker, s.t);
   return speed / baseMinutes(project.difficulty);
-}
-
-/** The first hard part, in order, not yet reached. */
-function nextHardPart(project: Project): number | undefined {
-  const index = project.hardParts.findIndex(
-    (_, i) => !project.hardPartsHit.includes(i),
-  );
-  return index < 0 ? undefined : index;
-}
-
-function hitHardPart(s: Step, project: Project, index: number, gap: number): void {
-  const part = project.hardParts[index];
-  if (!part) return;
-  project.hardPartsHit.push(index);
-  project.stuckOn = index;
-  project.stuckMinutesLeft = stuckMinutes(part.severity, gap, s.worker.traits.talent);
-  s.worker.activity = 'stuck';
-  s.worker.activitySince = s.t;
-  s.events.push({ type: 'hard-part-hit', index });
 }
 
 function finishProject(s: Step, project: Project): void {
@@ -284,23 +273,38 @@ function fallAsleepIfSpent(s: Step): void {
   s.events.push({ type: 'fell-asleep' });
 }
 
-/** Ask for coffee once when tired; go anyway if ignored and fed up. */
-function handleCoffeeCraving(s: Step): void {
+/**
+ * Breaks they arrange themselves: ask for coffee when tired and go anyway
+ * if ignored, and take a break every so often. Scared workers don't dare.
+ */
+function handleBreaks(s: Step): void {
   const { worker } = s;
   if (!AT_DESK.has(worker.activity)) return;
-  if (worker.wantsCoffeeSince === undefined) {
-    if (worker.stats.energy >= COFFEE_ASK_ENERGY) return;
-    worker.wantsCoffeeSince = s.t;
-    s.events.push({ type: 'wants-coffee' });
+  askForCoffee(s);
+  if (worker.attitude === 'scared') return;
+  if (coffeeIgnored(s)) {
+    startCoffee(worker, s.t);
+    s.events.push({ type: 'took-coffee-anyway' });
     return;
   }
-  const waited = (s.t - worker.wantsCoffeeSince) / MS_PER_MINUTE;
-  if (waited < COFFEE_IGNORED_MINUTES) return;
-  const fedUp =
-    worker.stats.mood < COFFEE_ANYWAY_MOOD || worker.attitude === 'bitter';
-  if (!fedUp) return;
+  const due = BREAK_EVERY_MINUTES / worker.traits.stamina;
+  if ((worker.minutesSinceBreak ?? 0) < due - EPSILON) return;
   startCoffee(worker, s.t);
-  s.events.push({ type: 'took-coffee-anyway' });
+  s.events.push({ type: 'took-break' });
+}
+
+function askForCoffee(s: Step): void {
+  const { worker } = s;
+  if (worker.wantsCoffeeSince !== undefined) return;
+  if (worker.stats.energy >= COFFEE_ASK_ENERGY) return;
+  worker.wantsCoffeeSince = s.t;
+  s.events.push({ type: 'wants-coffee' });
+}
+
+function coffeeIgnored(s: Step): boolean {
+  const since = s.worker.wantsCoffeeSince;
+  if (since === undefined) return false;
+  return (s.t - since) / MS_PER_MINUTE >= COFFEE_IGNORED_MINUTES;
 }
 
 function checkEndings(s: Step): void {

@@ -12,6 +12,7 @@ import type { Farewell, WorkerLine } from '../brain';
 import type { DirectAction, Effect, OfficeTab } from '../shared/ipc';
 import type {
   ChatLine,
+  ChatRequest,
   EndingKind,
   GameEvent,
   GameState,
@@ -47,7 +48,12 @@ export interface BrainLike {
     state: GameState,
     message: string,
   ): Promise<{
-    reply: { say: string; tone: 'kind' | 'neutral' | 'cruel'; remember?: string };
+    reply: {
+      say: string;
+      tone: 'kind' | 'neutral' | 'cruel';
+      remember?: string;
+      action?: ChatRequest;
+    };
     offline: boolean;
   }>;
   releaseNotes(
@@ -119,6 +125,8 @@ export class Director {
   private ending: { startedAt: number; farewell?: Farewell } | undefined;
   private busy = false;
   private offline = false;
+  /** Bugs planted while they were away, announced when they come back. */
+  private readonly unnoticedBugs = new Set<string>();
 
   constructor(
     initial: GameState,
@@ -190,6 +198,17 @@ export class Director {
         return;
       case 'hard-part-hit': {
         const part = this.state.project?.hardParts[event.index];
+        if (part?.mystery) {
+          // Planted while they were away from the desk: they find it now.
+          if (this.unnoticedBugs.delete(bugKey(part))) {
+            void this.speak(
+              `You sat back down and your code is broken: "${part.title}" - ` +
+                `${part.detail}. It was fine when you left. React.`,
+              true,
+            );
+          }
+          return;
+        }
         if (part) {
           void this.speak(
             `You just hit a hard part of the project: "${part.title}" - ` +
@@ -221,6 +240,29 @@ export class Director {
           true,
         );
         return;
+      case 'took-break':
+        void this.speak(
+          'You decided you have earned a short break and are heading to the ' +
+            'coffee machine.',
+          true,
+        );
+        return;
+      case 'code-broken': {
+        const part = this.state.project?.hardParts[event.index];
+        this.deps.effect({ type: 'glitch' });
+        if (!part) return;
+        const away = worker?.activity === 'coffee' || worker?.activity === 'asleep';
+        if (away) {
+          this.unnoticedBugs.add(bugKey(part));
+        } else {
+          void this.speak(
+            `Your code just broke for no reason: "${part.title}" - ` +
+              `${part.detail}. You didn't touch anything. React.`,
+            true,
+          );
+        }
+        return;
+      }
       case 'took-coffee-anyway':
         void this.speak(
           'Nobody answered, so you are taking a coffee break anyway.',
@@ -311,6 +353,8 @@ export class Director {
         void this.speak('Your boss just sent you for a coffee break.', true);
         return;
       case 'fire':
+      case 'sabotage':
+        // The ending and the broken code each have their own reaction.
         return;
     }
   }
@@ -330,9 +374,14 @@ export class Director {
     this.markOffline(offline);
     if (!this.isStillHere(worker.id)) return;
     const now = this.deps.now();
-    const result = game.act(this.state, { type: 'chat', tone: reply.tone }, now);
+    const result = game.act(
+      this.state,
+      { type: 'chat', tone: reply.tone, request: reply.action },
+      now,
+    );
     this.state = result.state;
     this.handleEvents(result.events, result.state);
+    this.deps.effect({ type: 'react', tone: reply.tone });
     this.applyLine({ say: reply.say });
     if (reply.remember) this.remember('boss', reply.remember);
     this.commit();
@@ -630,6 +679,10 @@ export class Director {
   private log(message: string, err?: unknown): void {
     this.deps.log(message, err);
   }
+}
+
+function bugKey(part: HardPart): string {
+  return `${part.at}|${part.title}`;
 }
 
 const ENDING_LABELS: Record<EndingKind, string> = {

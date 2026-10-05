@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GameState, Settings } from '../shared/types';
+import type { GameState, Settings, Worker } from '../shared/types';
 
 /** Settings for a fresh install. `filesDir` depends on the machine. */
 export function defaultSettings(documentsDir: string): Settings {
@@ -46,9 +46,20 @@ function withDefaults(state: GameState, settings: Settings): GameState {
     deskLeftovers: state.deskLeftovers ?? [],
     releases: state.releases ?? [],
     chat: state.chat ?? [],
+    worker: state.worker ? workerWithDefaults(state.worker) : undefined,
     settings: { ...settings, ...state.settings },
     // Whatever the brain was doing when the app closed is long gone.
     brainStatus: 'ok',
+  };
+}
+
+/** Fields added after the first release, so existing workers survive. */
+function workerWithDefaults(worker: Worker): Worker {
+  return {
+    ...worker,
+    ledger: { ...worker.ledger, sabotages: worker.ledger.sabotages ?? 0 },
+    recentSabotages: worker.recentSabotages ?? [],
+    minutesSinceBreak: worker.minutesSinceBreak ?? 0,
   };
 }
 

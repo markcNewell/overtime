@@ -15,7 +15,7 @@ const SHOTS = [
   { name: 'chat', mock: 'busy', tab: 'chat' },
   { name: 'settings', mock: 'busy', tab: 'settings' },
 ];
-const SIZE = { width: 820, height: 640 };
+const SIZE = { width: 396, height: 500 };
 
 // A private profile so this never clashes with another Electron process.
 app.setPath('userData', join(tmpdir(), `overtime-office-preview-${process.pid}`));

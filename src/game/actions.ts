@@ -3,12 +3,14 @@
 import type {
   BossAction,
   BossActionType,
+  ChatRequest,
   ChatTone,
   GameEvent,
   GameState,
   Worker,
 } from '../shared/types';
 import { todayKey } from './lifecycle';
+import { plantBug } from './sabotage';
 import {
   BONUS,
   CHAT_CRUEL,
@@ -23,10 +25,10 @@ import {
 } from './tuning';
 import {
   applyBoost,
+  backToWork,
   nudge,
   pruneRecent,
   refreshAttitude,
-  resume,
   startCoffee,
   startEnding,
 } from './worker';
@@ -80,16 +82,21 @@ function refusal(state: GameState, action: BossAction, now: number): string | un
   const worker = state.worker;
   if (!worker) return 'Nobody works here';
   if (worker.activity === 'leaving') return "They're already on their way out";
-  if (action.type === 'coffee' && worker.activity === 'coffee') {
-    return 'Already on a coffee break';
+  switch (action.type) {
+    case 'coffee':
+      if (worker.activity === 'coffee') return 'Already on a coffee break';
+      if (worker.activity === 'arriving') return 'Still arriving';
+      return undefined;
+    case 'bonus':
+      if (worker.lastBonusDay === todayKey(now)) return 'Already had a bonus today';
+      return undefined;
+    case 'sabotage':
+      if (!state.project) return 'There is no code to mess up yet';
+      if (worker.activity === 'arriving') return "They haven't even logged in yet";
+      return undefined;
+    default:
+      return undefined;
   }
-  if (action.type === 'coffee' && worker.activity === 'arriving') {
-    return 'Still arriving';
-  }
-  if (action.type === 'bonus' && worker.lastBonusDay === todayKey(now)) {
-    return 'Already had a bonus today';
-  }
-  return undefined;
 }
 
 function applyAction(ctx: Ctx, action: BossAction): void {
@@ -105,28 +112,27 @@ function applyAction(ctx: Ctx, action: BossAction): void {
     case 'bonus':
       return bonus(ctx);
     case 'chat':
-      return chat(ctx, action.tone);
+      return chat(ctx, action.tone, action.request);
+    case 'sabotage':
+      return sabotage(ctx);
     case 'fire':
       return startEnding(ctx.worker, 'fired', ctx.now, ctx.events);
   }
 }
 
+function sabotage(ctx: Ctx): void {
+  // The refusal check guarantees a project; this keeps TypeScript sure too.
+  if (!ctx.state.project) return;
+  plantBug(ctx.state.project, ctx.worker, ctx.now, ctx.events);
+}
+
+/** A jolt back to work: no faster, just awake and at the desk. */
 function shock(ctx: Ctx): void {
   const { worker, now, events } = ctx;
   worker.ledger.shocks += 1;
   worker.recentShocks.push(now);
-  applyBoost(worker, SHOCK.multiplier, SHOCK.minutes, now);
   nudge(worker.stats, { mood: SHOCK.mood, sanity: SHOCK.sanity });
-
-  if (worker.activity === 'asleep') {
-    nudge(worker.stats, { energy: SHOCK.wakeEnergy });
-    resume(worker, ctx.state.project, now);
-    events.push({ type: 'woke-up' });
-  } else if (worker.activity === 'coffee') {
-    // Dragged back to the desk mid-sip.
-    delete worker.coffeeUntil;
-    resume(worker, ctx.state.project, now);
-  }
+  backToWork(worker, ctx.state.project, now, events);
 
   const windowStart = now - FRY_WINDOW_MINUTES * MS_PER_MINUTE;
   const recent = worker.recentShocks.filter((at) => at > windowStart).length;
@@ -158,6 +164,11 @@ function coffee(ctx: Ctx): void {
   startCoffee(ctx.worker, ctx.now);
 }
 
+/** Can a coffee break start without being refused? */
+function canTakeCoffee(worker: Worker): boolean {
+  return worker.activity !== 'coffee' && worker.activity !== 'arriving';
+}
+
 function bonus(ctx: Ctx): void {
   const { worker, now } = ctx;
   worker.ledger.bonuses += 1;
@@ -165,7 +176,11 @@ function bonus(ctx: Ctx): void {
   nudge(worker.stats, { mood: BONUS.mood, sanity: BONUS.sanity });
 }
 
-function chat(ctx: Ctx, tone: ChatTone): void {
+/**
+ * The tone always lands; a request is something they agreed to in their
+ * reply, so it happens if it can and is quietly dropped if not.
+ */
+function chat(ctx: Ctx, tone: ChatTone, request: ChatRequest | undefined): void {
   const { worker } = ctx;
   if (tone === 'kind') {
     worker.ledger.kindChats += 1;
@@ -174,4 +189,7 @@ function chat(ctx: Ctx, tone: ChatTone): void {
     worker.ledger.cruelChats += 1;
     nudge(worker.stats, { mood: CHAT_CRUEL.mood, sanity: CHAT_CRUEL.sanity });
   }
+  if (request === 'coffee' && canTakeCoffee(worker)) coffee(ctx);
+  // Like a shock, minus the pain.
+  if (request === 'work') backToWork(worker, ctx.state.project, ctx.now, ctx.events);
 }

@@ -139,11 +139,11 @@ const PAIRINGS: [Level, Difficulty][] = [
 describe('project duration for a sensible pairing', () => {
   for (const [level, difficulty] of PAIRINGS) {
     for (const parts of [2, 3]) {
-      it(`${level} on d${difficulty} with ${parts} hard parts takes 1-3 h`, () => {
+      it(`${level} on d${difficulty} with ${parts} hard parts takes 1-3.5 h`, () => {
         const run = simulate(startProject(level, difficulty, parts), { coffee: true });
         expect(run.ending).toBeUndefined();
         expect(run.minutes).toBeGreaterThanOrEqual(60);
-        expect(run.minutes).toBeLessThanOrEqual(200);
+        expect(run.minutes).toBeLessThanOrEqual(210);
       });
     }
   }

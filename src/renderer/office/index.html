@@ -10,36 +10,29 @@
     <link rel="stylesheet" href="office.css" />
   </head>
   <body>
-    <header class="masthead">
-      <div class="brand">
+    <div class="panel">
+      <header class="masthead">
         <img class="logo" src="../../assets/icon.png" alt="" />
-        <div>
+        <div class="titles">
           <h1>Pointless Apps Ltd</h1>
           <p class="subtitle" id="summary">The boss's office</p>
         </div>
-      </div>
-      <span class="brain" id="brain"></span>
-    </header>
-    <nav class="tabs" id="tabs">
-      <button data-tab="hire">Hire</button>
-      <button data-tab="projects">Projects</button>
-      <button data-tab="staff">Staff file</button>
-      <button data-tab="chat">Chat</button>
-      <button data-tab="settings">Settings</button>
-    </nav>
-    <main id="content"></main>
-    <section class="chat-entry" id="chat-entry" hidden>
-      <form id="chat-form">
-        <input
-          id="chat-input"
-          type="text"
-          maxlength="300"
-          autocomplete="off"
-          placeholder="Say something to your employee..."
-        />
-        <button type="submit">Send</button>
-      </form>
-    </section>
+        <span class="brain" id="brain"></span>
+        <button class="close" id="close" aria-label="Close" title="Close (Esc)">
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </header>
+      <nav class="tabs" id="tabs">
+        <button data-tab="hire">Hire</button>
+        <button data-tab="projects">Projects</button>
+        <button data-tab="staff">Staff</button>
+        <button data-tab="chat">Log</button>
+        <button data-tab="settings">Settings</button>
+      </nav>
+      <main id="content"></main>
+    </div>
     <script src="office.js"></script>
   </body>
 </html>

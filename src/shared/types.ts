@@ -13,6 +13,11 @@ export type EndingKind = 'lost-mind' | 'fried' | 'rage-quit' | 'fired';
 export type Difficulty = 1 | 2 | 3 | 4 | 5;
 export type Severity = 1 | 2 | 3;
 export type ChatTone = 'kind' | 'neutral' | 'cruel';
+/**
+ * Something the worker agreed to do in a chat reply: take a coffee break,
+ * or stop slacking and get back to the desk.
+ */
+export type ChatRequest = 'coffee' | 'work';
 export type HairStyle = 'short' | 'long' | 'bun' | 'bald' | 'mohawk' | 'curly';
 
 /**
@@ -88,6 +93,8 @@ export interface Ledger {
   kindChats: number;
   cruelChats: number;
   coffees: number;
+  /** Times the boss secretly broke their code. They don't know it's you. */
+  sabotages: number;
 }
 
 export type MemoryKind = 'boss' | 'work' | 'desk' | 'self';
@@ -115,6 +122,10 @@ export interface Worker extends Candidate {
   recentShocks: number[];
   /** Times of recent praise, used for diminishing returns. */
   recentPraises: number[];
+  /** Times of recent sabotage; each one in quick succession is nastier. */
+  recentSabotages: number[];
+  /** Work minutes since their last break, for taking breaks unasked. */
+  minutesSinceBreak: number;
   /** Local calendar day (YYYY-MM-DD) of the last bonus. */
   lastBonusDay?: string;
   /** Consecutive minutes spent at rock-bottom mood. */
@@ -134,6 +145,11 @@ export interface HardPart {
   severity: Severity;
   title: string;
   detail: string;
+  /**
+   * A bug the boss planted by messing up their code. Hurts sanity more than
+   * a normal hard part, and the worker has no idea where it came from.
+   */
+  mystery?: boolean;
 }
 
 /** A pointless app idea on offer. */
@@ -244,7 +260,8 @@ export type BossAction =
   | { type: 'coffee' }
   | { type: 'bonus' }
   | { type: 'fire' }
-  | { type: 'chat'; tone: ChatTone };
+  | { type: 'sabotage' }
+  | { type: 'chat'; tone: ChatTone; request?: ChatRequest };
 
 export type BossActionType = BossAction['type'];
 
@@ -256,6 +273,10 @@ export type GameEvent =
   | { type: 'project-finished'; quality: number; grade: string }
   | { type: 'wants-coffee' }
   | { type: 'took-coffee-anyway' }
+  /** They decided on their own it was time for a break. */
+  | { type: 'took-break' }
+  /** The boss broke their code; `index` is the planted hard part. */
+  | { type: 'code-broken'; index: number }
   | { type: 'coffee-done' }
   | { type: 'fell-asleep' }
   | { type: 'woke-up' }

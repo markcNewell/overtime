@@ -101,22 +101,20 @@ export const STUCK_GAP_FACTOR = 0.3;
 
 // --- Coffee -----------------------------------------------------------
 
-export const COFFEE_ASK_ENERGY = 25;
-export const COFFEE_IGNORED_MINUTES = 15;
-/** Ignored and this unhappy (or bitter), they go anyway. */
-export const COFFEE_ANYWAY_MOOD = 30;
-export const COFFEE_BREAK_MINUTES = 6;
+export const COFFEE_ASK_ENERGY = 50;
+/** Not given coffee this long after asking, they go anyway (unless scared). */
+export const COFFEE_IGNORED_MINUTES = 5;
+export const COFFEE_BREAK_MINUTES = 7;
 export const COFFEE_MOOD = 3;
+/** Work minutes between self-scheduled breaks, divided by stamina. */
+export const BREAK_EVERY_MINUTES = 60;
 
 // --- Boss actions -----------------------------------------------------
 
-export const SHOCK = {
-  multiplier: 1.8,
-  minutes: 10,
-  mood: -10,
-  sanity: -3,
-  wakeEnergy: 15,
-} as const;
+/** A shock gets them back to work; it doesn't make them faster. */
+export const SHOCK = { mood: -10, sanity: -3 } as const;
+/** Energy a sleeper wakes with, from a shock or being told to get back to it. */
+export const WAKE_ENERGY = 15;
 
 export const SHOUT = {
   multiplier: 1.3,
@@ -131,7 +129,18 @@ export const BONUS = { mood: 25, sanity: 10 } as const;
 export const CHAT_KIND_MOOD = 4;
 export const CHAT_CRUEL = { mood: -6, sanity: -1 } as const;
 
-/** recentShocks / recentPraises older than this are dropped. */
+export const SABOTAGE = {
+  /** Progress lost, never below 0 or a hard part already reached. */
+  knockback: 0.03,
+  mood: -4,
+  sanity: -4,
+  /** Severity = 1 + min(this, sabotages in the window before this one). */
+  maxExtraSeverity: 2,
+} as const;
+/** Extra sanity lost per minute while stuck on a planted bug. */
+export const MYSTERY_SANITY_DRAIN = 0.25;
+
+/** recentShocks / recentPraises / recentSabotages older than this are dropped. */
 export const RECENT_WINDOW_MINUTES = 30;
 
 // --- Endings ----------------------------------------------------------
@@ -171,7 +180,7 @@ export const QUALITY_WEIGHTS = {
   mood: 0.1,
 } as const;
 export const QUALITY_GAP_PENALTY = 0.3;
-/** Quality multiplier while boosted by a shock or shout (rushed work). */
+/** Quality multiplier while boosted by a shout (rushed work). */
 export const RUSHED_QUALITY = 0.85;
 
 /** Highest first; the first band the quality reaches wins. */

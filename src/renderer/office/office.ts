@@ -1,7 +1,8 @@
 /**
- * The office window: hiring, picking projects, the staff file, the chat log
- * and settings. Re-renders from the full GameState pushed by the main
- * process, skipping the DOM work when a tab's HTML hasn't changed.
+ * The office panel: hiring, picking projects, the staff file, the chat log
+ * and settings, squeezed into a small pop-up next to the worker. Re-renders
+ * from the full GameState pushed by the main process, skipping the DOM work
+ * when a tab's HTML hasn't changed.
  */
 
 import { capacity, xpFor } from '../../game/levels';
@@ -31,10 +32,13 @@ let tab: OfficeTab = 'hire';
 let lastHtml = '';
 let claudeCheck: ClaudeCheck | undefined;
 let checkingClaude = false;
+/** Which candidate the hiring pager shows, and for which shortlist. */
+let candidateIndex = 0;
+let shortlistKey = '';
+/** Which pitch rows are expanded, so re-renders don't snap them shut. */
+const openPitches = new Set<string>();
 
 const content = byId('content');
-const chatEntry = byId('chat-entry');
-const chatInput = byId<HTMLInputElement>('chat-input');
 
 // ---------------------------------------------------------------- helpers
 
@@ -68,7 +72,7 @@ const STAR_PATH =
 /** Drawn rather than ★ so it renders even without a symbol font. */
 function stars(d: Difficulty): string {
   const star = (on: boolean): string =>
-    `<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">` +
+    `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true">` +
     `<path d="${STAR_PATH}" class="${on ? 'on' : 'off'}"/></svg>`;
   const icons = [1, 2, 3, 4, 5].map((n) => star(n <= d)).join('');
   return `<span class="stars" role="img" aria-label="${d} of 5">${icons}</span>`;
@@ -83,7 +87,7 @@ const DIFFICULTY_NAMES: Record<Difficulty, string> = {
 };
 
 const ATTITUDE_WORDS: Record<Attitude, string> = {
-  neutral: 'Neutral. Thinks you are just a boss.',
+  neutral: 'Neutral. You are just a boss.',
   loyal: 'Loyal. Would take a bullet for you (a small one).',
   scared: 'Scared of you. Flinches when you walk past.',
   bitter: 'Bitter. Quietly updating their CV.',
@@ -105,9 +109,9 @@ function pips(value: number): string {
 
 function traitsHtml(t: Traits): string {
   return `<div class="traits">
-    <span>Stamina</span><span class="pips">${pips(t.stamina)}</span>
-    <span>Resilience</span><span class="pips">${pips(t.resilience)}</span>
-    <span>Talent</span><span class="pips">${pips(t.talent)}</span>
+    <span>Stamina <span class="pips">${pips(t.stamina)}</span></span>
+    <span>Resilience <span class="pips">${pips(t.resilience)}</span></span>
+    <span>Talent <span class="pips">${pips(t.talent)}</span></span>
   </div>`;
 }
 
@@ -133,55 +137,67 @@ function leftoversHtml(leftovers: Leftover[]): string {
       l.kind === 'mug'
         ? `${esc(l.fromWorker)}'s mug: “${esc(l.text)}”`
         : l.kind === 'sticky-note'
-          ? `A sticky note from ${esc(l.fromWorker)}: “${esc(l.text)}”`
+          ? `A note from ${esc(l.fromWorker)}: “${esc(l.text)}”`
           : `${esc(l.fromWorker)}'s unfinished project: ${esc(l.text)}`;
     return `<div>${what}</div>`;
   });
   return `<div class="banner"><b>Left on the desk</b>${items.join('')}</div>`;
 }
 
-// ------------------------------------------------------------------ tabs
+// ------------------------------------------------------------------ hire
 
 function hireTab(s: GameState): string {
   const worker = s.worker;
   if (worker && worker.activity !== 'leaving') {
-    return `<div class="empty">
-      <h2>${esc(worker.name)} is at the desk</h2>
-      <p>To hire someone else you'll have to get rid of them first<br>
-      (clipboard on their desk → Fire).</p></div>`;
+    return `<div class="empty"><h2>${esc(worker.name)} is at the desk</h2>
+      <p>To hire someone else, get rid of them first<br>(clipboard on the desk → Fire).</p></div>`;
   }
-  const cards = s.candidates.map(candidateCard).join('');
-  const loading = `<div class="empty">The recruiter is digging up some candidates...</div>`;
-  return `<div class="section">
-      <h2>We're hiring</h2>
-      <p class="note">Pick someone to sit at the desk. Juniors are cheap, fragile and
-      easily broken by hard projects.</p>
-      ${leftoversHtml(s.deskLeftovers)}
-      ${cards ? `<div class="grid">${cards}</div>` : loading}
-    </div>
-    <div class="row-end">
-      <button data-action="reroll" ${s.brainStatus === 'thinking' ? 'disabled' : ''}>
-        Show 3 more</button>
-    </div>`;
+  const busy = s.brainStatus === 'thinking' ? 'disabled' : '';
+  const reroll = `<button data-action="reroll" ${busy}>3 more</button>`;
+  if (s.candidates.length === 0) {
+    return `${leftoversHtml(s.deskLeftovers)}
+      <div class="empty">The recruiter is digging up some candidates...</div>`;
+  }
+  syncShortlist(s.candidates);
+  const c = s.candidates[candidateIndex] ?? s.candidates[0]!;
+  const pager = `<div class="pager">
+      <button data-action="prev" aria-label="Previous">‹</button>
+      ${candidateIndex + 1} / ${s.candidates.length}
+      <button data-action="next" aria-label="Next">›</button></div>`;
+  return `${leftoversHtml(s.deskLeftovers)}
+    ${candidateCard(c)}
+    <div class="row" style="margin-top:8px">${pager}<span class="spacer"></span>${reroll}
+      <button class="primary" data-action="hire" data-id="${esc(c.id)}">Hire</button></div>`;
+}
+
+/** A new shortlist starts the pager from the first candidate again. */
+function syncShortlist(candidates: Candidate[]): void {
+  const key = candidates.map((c) => c.id).join(',');
+  if (key === shortlistKey) return;
+  shortlistKey = key;
+  candidateIndex = 0;
 }
 
 function candidateCard(c: Candidate): string {
-  const portrait = personSvg(c.look, { pose: 'stand', expression: 'happy', size: 120 });
+  const portrait = personSvg(c.look, { pose: 'stand', expression: 'happy', size: 84, crop: 'bust' });
   return `<article class="card">
-    <div class="portrait">${portrait}</div>
-    <div class="who"><h3>${esc(c.name)}</h3>${levelBadge(c.level)}</div>
-    <div class="muted">${esc(c.age)} · ${esc(c.pronouns)}</div>
-    <div class="field"><b>Specialty</b> ${esc(c.specialty)}</div>
+    <div class="cand-top">
+      <div class="portrait">${portrait}</div>
+      <div>
+        <h3>${esc(c.name)}</h3>
+        <div class="muted">${esc(c.age)} · ${esc(c.pronouns)} ${levelBadge(c.level)}</div>
+        <div class="field">${esc(c.specialty)}</div>
+      </div>
+    </div>
     <div class="field"><b>Personality</b> ${esc(c.personality)}</div>
     <div class="field"><b>Quirk</b> ${esc(c.quirk)}</div>
     <div class="field red-flag"><b>Red flag</b> ${esc(c.redFlag)}</div>
     <div class="backstory">${esc(c.backstory)}</div>
     ${traitsHtml(c.traits)}
-    <div class="actions">
-      <button class="primary" data-action="hire" data-id="${esc(c.id)}">Hire</button>
-    </div>
   </article>`;
 }
+
+// -------------------------------------------------------------- projects
 
 function projectsTab(s: GameState): string {
   const worker = s.worker;
@@ -195,130 +211,128 @@ function projectsTab(s: GameState): string {
   return current + offers + releasesHtml(s.releases);
 }
 
+const STATUS: Record<string, string> = {
+  working: 'Working on it',
+  stuck: 'Stuck',
+  coffee: 'On a coffee break',
+  asleep: 'Asleep at the keyboard',
+  arriving: 'Just arriving',
+  idle: 'Idle',
+  leaving: 'Leaving the company',
+};
+
 function currentProjectHtml(p: Project, worker: Worker): string {
-  const status: Record<string, string> = {
-    working: 'Working on it',
-    stuck: 'Stuck',
-    coffee: 'On a coffee break',
-    asleep: 'Asleep at the keyboard',
-    arriving: 'Just arriving',
-    idle: 'Idle',
-    leaving: 'Leaving the company',
-  };
   const parts = p.hardParts
     .map((h, i) => {
-      const cls = p.stuckOn === i ? 'now' : p.hardPartsHit.includes(i) ? 'done' : '';
-      return `<li class="${cls}"><span class="at">${pct(h.at)}%</span>
-        ${esc(h.title)} <span class="muted">· ${esc(h.detail)}</span></li>`;
+      const cls = [
+        p.stuckOn === i ? 'now' : p.hardPartsHit.includes(i) ? 'done' : '',
+        h.mystery ? 'mystery' : '',
+      ].join(' ');
+      const title = h.mystery ? `${esc(h.title)} (out of nowhere)` : esc(h.title);
+      return `<li class="${cls}"><span class="at">${pct(h.at)}%</span>${title}</li>`;
     })
     .join('');
   const brief = p.filePath
-    ? `<button class="link" data-action="open" data-path="${esc(p.filePath)}">Open brief</button>`
+    ? ` · <button class="link" data-action="open" data-path="${esc(p.filePath)}">brief</button>`
     : '';
   return `<div class="section card">
-    <div class="who"><h3>Now: ${esc(p.title)}</h3>
-      <span title="${DIFFICULTY_NAMES[p.difficulty]}">${stars(p.difficulty)}</span></div>
+    <div class="who"><h3>${esc(p.title)}</h3>${stars(p.difficulty)}</div>
     <div class="muted">${esc(p.tagline)}</div>
     ${bar('progress', p.progress * 100)}
-    <div class="muted">${pct(p.progress)}% · ${status[worker.activity] ?? ''} ${brief}</div>
+    <div class="muted">${pct(p.progress)}% · ${STATUS[worker.activity] ?? ''}${brief}</div>
     <ul class="hard-parts">${parts}</ul>
   </div>`;
 }
 
 function pitchesHtml(pitches: Pitch[], worker: Worker): string {
-  const cards = [...pitches]
+  const rows = [...pitches]
     .sort((a, b) => a.difficulty - b.difficulty)
-    .map((p) => pitchCard(p, worker))
+    .map((p) => pitchRow(p, worker))
     .join('');
   return `<div class="section">
     <h2>Pick ${esc(worker.name)}'s next project</h2>
-    <p class="note">Each idea has a brief in your files folder. Edit its “Where the
-    developer will struggle” list before assigning it to change where they get stuck.</p>
-    <div class="grid">${cards}</div>
+    <p class="note">Tap one for details. Edit a brief's struggle list before
+    assigning it to change where they get stuck.</p>
+    ${rows}
   </div>`;
 }
 
-function pitchCard(p: Pitch, worker: Worker): string {
+function pitchRow(p: Pitch, worker: Worker): string {
   const over = p.difficulty > capacity(worker.level);
   const parts = p.hardParts
     .map((h) => `<li><span class="at">${pct(h.at)}%</span>${esc(h.title)}</li>`)
     .join('');
   const brief = p.filePath
-    ? `<button data-action="open" data-path="${esc(p.filePath)}">Read / edit brief</button>`
+    ? `<button data-action="open" data-path="${esc(p.filePath)}">Brief</button>`
     : '';
-  return `<article class="card">
-    <div class="who">${stars(p.difficulty)}
-      <span class="difficulty">${DIFFICULTY_NAMES[p.difficulty]}</span></div>
-    <h3>${esc(p.title)}</h3>
-    <div class="muted">${esc(p.tagline)}</div>
-    <div class="field">${esc(p.description)}</div>
-    ${over ? `<div class="over-level">Above a ${worker.level}'s level. Expect suffering.</div>` : ''}
-    <div class="field"><b>Where they'll struggle</b></div>
-    <ul class="hard-parts">${parts}</ul>
-    <div class="actions">${brief}
-      <button class="primary" data-action="assign" data-id="${esc(p.id)}">Assign</button>
+  return `<details class="pitch" data-pitch="${esc(p.id)}" ${openPitches.has(p.id) ? 'open' : ''}>
+    <summary>${stars(p.difficulty)}<b>${esc(p.title)}</b>
+      <span class="difficulty">${DIFFICULTY_NAMES[p.difficulty]}</span></summary>
+    <div class="pitch-body">
+      <div class="muted">${esc(p.tagline)}</div>
+      <div>${esc(p.description)}</div>
+      ${over ? `<div class="over-level">Above a ${worker.level}'s level. Expect suffering.</div>` : ''}
+      <ul class="hard-parts">${parts}</ul>
+      <div class="row-end">${brief}
+        <button class="primary" data-action="assign" data-id="${esc(p.id)}">Assign</button></div>
     </div>
-  </article>`;
+  </details>`;
 }
 
 function releasesHtml(releases: Release[]): string {
   if (releases.length === 0) return '';
   const rows = [...releases]
     .reverse()
+    .slice(0, 12)
     .map((r) => {
-      const notes = r.filePath
-        ? `<button class="link" data-action="open" data-path="${esc(r.filePath)}">notes</button>`
-        : '';
-      return `<tr><td>${esc(r.title)}</td><td>${esc(r.workerName)}</td>
-        <td>${esc(r.grade)}</td><td>${when(r.finishedAt)}</td><td>${notes}</td></tr>`;
+      const title = r.filePath
+        ? `<button class="link" data-action="open" data-path="${esc(r.filePath)}">${esc(r.title)}</button>`
+        : esc(r.title);
+      return `<li><span class="title">${title}</span>
+        <span class="muted">${esc(r.grade)}</span></li>`;
     })
     .join('');
-  return `<div class="section"><h2>Shipped</h2><table>
-    <tr><th>App</th><th>Built by</th><th>Verdict</th><th>When</th><th></th></tr>
-    ${rows}</table></div>`;
+  return `<div class="section"><h2>Shipped</h2><ul class="shipped">${rows}</ul></div>`;
 }
+
+// ----------------------------------------------------------------- staff
 
 function staffTab(s: GameState): string {
   const worker = s.worker;
   if (!worker) {
-    return `<div class="empty"><h2>Nobody works here right now</h2>
-      <p><button class="primary" data-action="tab" data-tab="hire">Hire someone</button></p>
-      </div>${leftoversHtml(s.deskLeftovers)}`;
+    return `${leftoversHtml(s.deskLeftovers)}<div class="empty"><h2>Nobody works here</h2>
+      <p><button class="primary" data-action="tab" data-tab="hire">Hire someone</button></p></div>`;
   }
   const portrait = personSvg(worker.look, {
     pose: 'stand',
     expression: expressionFor(worker),
-    size: 180,
+    size: 76,
+    crop: 'bust',
   });
-  return `<div class="staff">
-    <div>
+  return `<div class="section cand-top">
       <div class="portrait">${portrait}</div>
-      ${traitsHtml(worker.traits)}
+      <div>
+        <h3>${esc(worker.name)} ${levelBadge(worker.level)}</h3>
+        <div class="muted">${esc(worker.age)} · ${esc(worker.pronouns)} · ${worker.projectsDone} shipped</div>
+        <div>${ATTITUDE_WORDS[worker.attitude]}</div>
+      </div>
     </div>
-    <div>
-      <div class="who"><h2>${esc(worker.name)}</h2>${levelBadge(worker.level)}</div>
-      <p class="muted">${esc(worker.age)} · ${esc(worker.pronouns)} · ${esc(worker.specialty)}<br>
-        Hired ${when(worker.hiredAt)} · ${worker.projectsDone} shipped</p>
-      <p><b>Attitude to you:</b> ${ATTITUDE_WORDS[worker.attitude]}</p>
-      ${statsHtml(worker)}
-      <div class="section"><h2>How you've treated them</h2>${ledgerHtml(worker)}</div>
-      <div class="section"><h2>What they remember</h2>${memoriesHtml(worker)}</div>
-      ${leftoversHtml(s.deskLeftovers)}
-    </div>
-  </div>`;
+    ${statsHtml(worker)}
+    <div class="section">${traitsHtml(worker.traits)}</div>
+    <div class="section"><h2>How you've treated them</h2>${ledgerHtml(worker)}</div>
+    <div class="section"><h2>What they remember</h2>${memoriesHtml(worker)}</div>
+    ${leftoversHtml(s.deskLeftovers)}`;
 }
 
 function statsHtml(worker: Worker): string {
   const { energy, mood, sanity } = worker.stats;
   const next = nextLevel(worker.level);
-  const xpRow = next
-    ? (() => {
-        const from = xpFor(worker.level);
-        const to = xpFor(next);
-        const progress = ((worker.xp - from) / (to - from)) * 100;
-        return `<span>XP</span>${bar('xp', progress)}<span class="num">${Math.floor(worker.xp)}</span>`;
-      })()
-    : `<span>XP</span>${bar('xp', 100)}<span class="num">max</span>`;
+  let xpRow = `<span>XP</span>${bar('xp', 100)}<span class="num">max</span>`;
+  if (next) {
+    const from = xpFor(worker.level);
+    const progress = ((worker.xp - from) / (xpFor(next) - from)) * 100;
+    xpRow = `<span>XP</span>${bar('xp', progress)}<span class="num">${Math.floor(worker.xp)}</span>`;
+  }
   return `<div class="section stats">
     <span>Energy</span>${bar('energy', energy)}<span class="num">${Math.round(energy)}</span>
     <span>Mood</span>${bar('mood', mood)}<span class="num">${Math.round(mood)}</span>
@@ -337,6 +351,7 @@ function ledgerHtml(worker: Worker): string {
   const items: [string, number][] = [
     ['Shocked', l.shocks],
     ['Shouted at', l.shouts],
+    ['Code broken', l.sabotages ?? 0],
     ['Praised', l.praises],
     ['Bonuses', l.bonuses],
     ['Coffees', l.coffees],
@@ -354,20 +369,20 @@ function memoriesHtml(worker: Worker): string {
   if (worker.memories.length === 0) return `<p class="muted">Nothing yet.</p>`;
   const items = [...worker.memories]
     .reverse()
-    .map(
-      (m) => `<li><span class="when">${MEMORY_ICONS[m.kind]} ${when(m.at)}</span>${esc(m.text)}</li>`,
-    )
+    .slice(0, 12)
+    .map((m) => `<li><span class="when">${MEMORY_ICONS[m.kind]} ${when(m.at)}</span>${esc(m.text)}</li>`)
     .join('');
   return `<ul class="memories">${items}</ul>`;
 }
 
+// ------------------------------------------------------------------ chat
+
 function chatTab(s: GameState): string {
-  if (s.chat.length === 0) {
-    return `<div class="empty">No conversations yet. Say hello, or don't.</div>`;
-  }
+  const hint = `<p class="note">Talk to them with the Chat button on the clipboard by
+    their desk. This is the record of everything said.</p>`;
+  if (s.chat.length === 0) return `${hint}<div class="empty">Nothing said yet.</div>`;
   const name = s.worker?.name ?? 'Worker';
-  const lines = s.chat.map((line) => chatLine(line, name)).join('');
-  return `<div class="chat-log">${lines}</div>`;
+  return `${hint}<div class="chat-log">${s.chat.map((l) => chatLine(l, name)).join('')}</div>`;
 }
 
 function chatLine(line: ChatLine, workerName: string): string {
@@ -376,6 +391,8 @@ function chatLine(line: ChatLine, workerName: string): string {
   return `<div class="line ${line.from}"><span class="when">${label}${when(line.at)}</span>
     ${esc(line.text)}</div>`;
 }
+
+// -------------------------------------------------------------- settings
 
 function settingsTab(s: GameState): string {
   const st = s.settings;
@@ -386,36 +403,33 @@ function settingsTab(s: GameState): string {
     : claudeCheck
       ? `<span class="check-result ${claudeCheck.ok ? 'ok' : 'bad'}">${esc(claudeCheck.message)}</span>`
       : '';
-  return `<div class="section">
-    <div class="setting"><label>Always on top</label>
-      <div><input type="checkbox" data-setting="alwaysOnTop" ${st.alwaysOnTop ? 'checked' : ''}>
-      <span class="note">Turn off to let them sink behind your other windows.</span></div></div>
-    <div class="setting"><label>Hide from screen share</label>
-      <div><input type="checkbox" data-setting="hideFromScreenShare" ${st.hideFromScreenShare ? 'checked' : ''}>
-      <span class="note">You still see them; Teams and Zoom shouldn't. Some macOS
-      sharing tools ignore this, so use <kbd>${shortcut}</kbd> to hide them completely.</span></div></div>
-    <div class="setting"><label>Claude CLI</label>
-      <div>
-        <div class="row"><input type="text" id="claude-path" value="${esc(st.claudePath)}"
-          placeholder="Auto-detect"><button data-action="save-claude">Save</button>
-          <button data-action="test-claude">Test</button></div>
-        <p class="note">Your worker thinks with the Claude Code CLI you're logged in to,
-        on your subscription. Leave blank to find it automatically. ${check}</p>
-      </div></div>
-    <div class="setting"><label>Model</label>
+  const checked = (on: boolean): string => (on ? 'checked' : '');
+  return `
+    <div class="setting"><label class="check">
+      <input type="checkbox" data-setting="alwaysOnTop" ${checked(st.alwaysOnTop)}>
+      <span>Always on top<br><span class="note">Off lets them sink behind your windows.</span></span>
+    </label></div>
+    <div class="setting"><label class="check">
+      <input type="checkbox" data-setting="hideFromScreenShare" ${checked(st.hideFromScreenShare)}>
+      <span>Hide from screen share<br><span class="note">You still see them; Teams and
+      Zoom shouldn't. Some Mac tools ignore this, so <kbd>${shortcut}</kbd> hides them fully.</span></span>
+    </label></div>
+    <div class="setting"><span class="label">Claude CLI</span>
+      <div class="row"><input type="text" id="claude-path" value="${esc(st.claudePath)}"
+        placeholder="Auto-detect"><button data-action="save-claude">Save</button>
+        <button data-action="test-claude">Test</button></div>
+      <p class="note">Runs on your Claude subscription. ${check}</p></div>
+    <div class="setting"><span class="label">Model</span>
       <div class="row"><input type="text" id="model" value="${esc(st.model)}">
         <button data-action="save-model">Save</button></div></div>
-    <div class="setting"><label>Files folder</label>
-      <div><div class="row"><input type="text" id="files-dir" value="${esc(st.filesDir)}">
+    <div class="setting"><span class="label">Files folder</span>
+      <div class="row"><input type="text" id="files-dir" value="${esc(st.filesDir)}">
         <button data-action="save-files">Save</button>
-        <button data-action="open" data-path="${esc(st.filesDir)}">Open</button></div>
-        <p class="note">Project briefs and release notes are written here.</p></div></div>
-    <div class="setting"><label>Show / hide the worker</label>
-      <div><kbd>${shortcut}</kbd></div></div>
-  </div>`;
+        <button data-action="open" data-path="${esc(st.filesDir)}">Open</button></div></div>
+    <div class="setting"><span class="label">Show / hide the worker</span><kbd>${shortcut}</kbd></div>`;
 }
 
-// ----------------------------------------------------------- rendering
+// ------------------------------------------------------------- rendering
 
 const TABS: Record<OfficeTab, (s: GameState) => string> = {
   hire: hireTab,
@@ -433,9 +447,10 @@ function render(force = false): void {
   const html = TABS[tab](state);
   if (!force && html === lastHtml) return;
   const atBottom = content.scrollTop + content.clientHeight >= content.scrollHeight - 20;
+  const scroll = content.scrollTop;
   lastHtml = html;
   content.innerHTML = html;
-  if (tab === 'chat' && atBottom) content.scrollTop = content.scrollHeight;
+  content.scrollTop = tab === 'chat' && atBottom ? content.scrollHeight : scroll;
 }
 
 function renderChrome(s: GameState): void {
@@ -444,27 +459,23 @@ function renderChrome(s: GameState): void {
   }
   const worker = s.worker;
   byId('summary').textContent = worker
-    ? `${worker.name}, ${worker.level} developer${s.project ? ` · on “${s.project.title}”` : ''}`
+    ? `${worker.name}, ${worker.level}${s.project ? ` · “${s.project.title}”` : ''}`
     : 'Desk vacant';
   const brain = byId('brain');
-  const labels = { ok: '● Claude connected', thinking: '● thinking...', offline: '● Claude offline' };
-  brain.textContent = labels[s.brainStatus];
-  brain.classList.toggle('offline', s.brainStatus === 'offline');
-  chatEntry.hidden = tab !== 'chat';
-  chatInput.disabled = !worker || worker.activity === 'leaving';
+  const labels = { ok: 'Claude connected', thinking: 'Thinking...', offline: 'Claude offline' };
+  brain.title = labels[s.brainStatus];
+  brain.className = `brain ${s.brainStatus}`;
 }
 
 function showTab(next: OfficeTab): void {
   tab = next;
   lastHtml = '';
+  content.scrollTop = 0;
   render(true);
-  if (next === 'chat') {
-    content.scrollTop = content.scrollHeight;
-    chatInput.focus();
-  }
+  if (next === 'chat') content.scrollTop = content.scrollHeight;
 }
 
-// --------------------------------------------------------------- events
+// ---------------------------------------------------------------- events
 
 document.addEventListener('click', (event) => {
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-tab], [data-action]');
@@ -475,9 +486,16 @@ document.addEventListener('click', (event) => {
 
 async function handleAction(el: HTMLElement): Promise<void> {
   const { action, id, path } = el.dataset;
+  const count = state?.candidates.length ?? 0;
   switch (action) {
     case 'tab':
       return showTab((el.dataset.tab ?? 'staff') as OfficeTab);
+    case 'prev':
+      candidateIndex = (candidateIndex - 1 + count) % Math.max(1, count);
+      return render(true);
+    case 'next':
+      candidateIndex = (candidateIndex + 1) % Math.max(1, count);
+      return render(true);
     case 'hire':
       if (id) await api.hire(id);
       return showTab('projects');
@@ -504,6 +522,20 @@ async function handleAction(el: HTMLElement): Promise<void> {
   }
 }
 
+// Remember which pitch rows are open across the five-second re-renders.
+content.addEventListener(
+  'toggle',
+  (event) => {
+    const el = event.target as HTMLDetailsElement;
+    const id = el.dataset.pitch;
+    if (!id) return;
+    if (el.open) openPitches.add(id);
+    else openPitches.delete(id);
+    lastHtml = '';
+  },
+  true,
+);
+
 async function testClaude(): Promise<void> {
   checkingClaude = true;
   render(true);
@@ -527,12 +559,9 @@ document.addEventListener('change', (event) => {
   }
 });
 
-byId('chat-form').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const text = chatInput.value.trim();
-  if (!text) return;
-  chatInput.value = '';
-  void api.chat(text);
+byId('close').addEventListener('click', () => window.close());
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') window.close();
 });
 
 api.onState((next) => {

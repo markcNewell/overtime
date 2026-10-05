@@ -7,6 +7,7 @@
 
 import type {
   BossAction,
+  ChatTone,
   EndingKind,
   GameState,
   Settings,
@@ -20,6 +21,10 @@ export type Effect =
   | { type: 'smoke' }
   | { type: 'level-up' }
   | { type: 'confetti' }
+  /** Their monitor glitches: the boss just broke their code. */
+  | { type: 'glitch' }
+  /** A brief facial reaction to what the boss just said. */
+  | { type: 'react'; tone: ChatTone }
   | { type: 'ending'; kind: EndingKind };
 
 /** Boss actions the windows can send directly; chat goes via `chat()`. */

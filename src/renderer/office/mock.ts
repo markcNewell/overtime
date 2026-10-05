@@ -66,7 +66,7 @@ function worker(now: number): Worker {
     hiredAt: now - 30 * HOUR,
     stats: { energy: 38, mood: 52, sanity: 71 },
     xp: 61,
-    ledger: { shocks: 7, shouts: 2, praises: 4, bonuses: 1, kindChats: 3, cruelChats: 1, coffees: 5 },
+    ledger: { shocks: 7, shouts: 2, praises: 4, bonuses: 1, kindChats: 3, cruelChats: 1, coffees: 5, sabotages: 2 },
     attitude: 'neutral',
     memories: [
       { at: now - 26 * HOUR, kind: 'desk', text: "Found a mug from Dave: 'World's okayest dev'" },
@@ -78,6 +78,8 @@ function worker(now: number): Worker {
     activitySince: now - 600_000,
     recentShocks: [],
     recentPraises: [],
+    recentSabotages: [],
+    minutesSinceBreak: 20,
     lowMoodMinutes: 0,
   };
 }
@@ -174,14 +176,15 @@ function mockState(scenario: string): GameState {
       hardParts: [
         { at: 0.2, severity: 2, title: 'Fridge API is a fax machine', detail: 'Literally.' },
         { at: 0.55, severity: 3, title: 'Mercury in retrograde', detail: 'All tests fail.' },
+        { at: 0.57, severity: 2, title: 'Tabs and spaces swapped', detail: 'Nobody knows why.', mystery: true },
         { at: 0.8, severity: 1, title: 'Cheese drawer auth', detail: 'OAuth for dairy.' },
       ],
       startedAt: now - HOUR,
       progress: 0.57,
       workMinutes: 60,
       qualitySum: 40,
-      hardPartsHit: [0, 1],
-      stuckOn: 1,
+      hardPartsHit: [0, 1, 2],
+      stuckOn: 2,
       stuckMinutesLeft: 12,
     },
   };

@@ -189,6 +189,8 @@ mention the developer in the pitches.`
   return `Pitch three pointless app ideas. The apps are useless and oddly \
 specific, pitched completely straight like a deadpan startup.${who} For \
 inspiration (use loosely): ${muses.join(', ')}.
+The three ideas must be about completely different things: no shared topic, \
+user or gimmick.
 
 Exactly one easy (difficulty 1 or 2), one medium (3) and one hard (4 or 5).
 Each pitch has:

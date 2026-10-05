@@ -9,6 +9,7 @@ import type {
   GameState,
   Memory,
   Stats,
+  Worker,
 } from '../shared/types';
 import { addMemory } from './lifecycle';
 import { nudge, refreshAttitude } from './worker';
@@ -41,6 +42,39 @@ const CONSEQUENCES: Record<ComplaintOutcome, Consequence> = {
     memory: (s) => ({ kind: 'boss', text: `Complaining about ${s} only made the boss worse` }),
   },
 };
+
+/** Unanswered for this long (app-open minutes) and the complaint is ignored. */
+export const COMPLAINT_IGNORED_MINUTES = 30;
+
+/**
+ * Age the current worker's unanswered complaints. One left too long makes
+ * them decide the whole company is against them.
+ *
+ * @param state - Changed in place (called from inside `tick`).
+ * @param worker - The worker in `state`, changed in place.
+ * @param minutes - App-open minutes since the last tick, so closed time
+ *   never counts.
+ * @param now - Epoch ms.
+ * @param events - Receives `complaint-ignored`.
+ */
+export function ageComplaints(
+  state: GameState,
+  worker: Worker,
+  minutes: number,
+  now: number,
+  events: GameEvent[],
+): void {
+  for (const c of state.complaints ?? []) {
+    if (c.workerId !== worker.id || c.reply || c.ignoredAt) continue;
+    c.openMinutes = (c.openMinutes ?? 0) + minutes;
+    if (c.openMinutes < COMPLAINT_IGNORED_MINUTES) continue;
+    c.ignoredAt = now;
+    nudge(worker.stats, { mood: -6, sanity: -4 });
+    const text = `Nobody answered my complaint about ${c.subject.toLowerCase()}. The whole company is against me.`;
+    worker.memories = addMemory(worker, { at: now, kind: 'self', text }).memories;
+    events.push({ type: 'complaint-ignored', id: c.id });
+  }
+}
 
 /**
  * Apply the outcome of the boss's reply to an HR complaint.

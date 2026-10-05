@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hire, newGameState, resolveComplaint } from '../src/game';
-import type { Candidate, GameState, Settings } from '../src/shared/types';
+import { hire, newGameState, resolveComplaint, tick } from '../src/game';
+import type { Candidate, Complaint, GameEvent, GameState, Settings } from '../src/shared/types';
 
 const SETTINGS: Settings = {
   alwaysOnTop: true,
@@ -61,4 +61,41 @@ describe('resolveComplaint', () => {
     resolveComplaint(before, 'gaslit', 'x', 1);
     expect(before).toEqual(copy);
   });
+
+  it('an email left unanswered for 30 open minutes turns them paranoid', () => {
+    const complaint: Complaint = {
+      id: 'k',
+      workerId: 'w',
+      workerName: 'Dave',
+      filedAt: 0,
+      subject: 'The Shocks',
+      body: '...',
+    };
+    let state: GameState = { ...withWorker(), complaints: [complaint], lastTickAt: 0 };
+    const events: GameEvent[] = [];
+    for (let minute = 1; minute <= 31; minute++) {
+      const r = tick(state, minute * 60_000);
+      state = r.state;
+      events.push(...r.events);
+    }
+    expect(state.complaints[0]!.ignoredAt).toBeDefined();
+    expect(events).toContainEqual({ type: 'complaint-ignored', id: 'k' });
+    expect(state.worker!.memories.at(-1)?.text).toContain('whole company is against me');
+  });
+
+  it('time with the app closed does not count towards ignoring', () => {
+    const complaint: Complaint = {
+      id: 'k',
+      workerId: 'w',
+      workerName: 'Dave',
+      filedAt: 0,
+      subject: 's',
+      body: 'b',
+    };
+    const state: GameState = { ...withWorker(), complaints: [complaint], lastTickAt: 0 };
+    const { state: next } = tick(state, 10 * 3_600_000);
+    expect(next.complaints[0]!.ignoredAt).toBeUndefined();
+    expect(next.complaints[0]!.openMinutes).toBeLessThanOrEqual(1);
+  });
 });
+

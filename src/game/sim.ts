@@ -14,6 +14,7 @@ import {
   workDrain,
   xpGain,
 } from './formulas';
+import { ageComplaints } from './complaints';
 import { gapFor, grade, levelFor, levelRank } from './levels';
 import { hitHardPart, nextHardPart } from './project';
 import {
@@ -89,6 +90,7 @@ export function tick(
     step({ state: next, worker, minutes: minutes / count, t, events });
     if (hasLeft(worker)) break;
   }
+  if (!hasLeft(worker)) ageComplaints(next, worker, minutes, now, events);
   pruneRecent(worker, now);
   return { state: next, events };
 }

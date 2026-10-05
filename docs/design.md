@@ -106,8 +106,11 @@ The boss replies in the office panel's Inbox, and Claude, as the worker, judges 
 | Unconvinced | They don't buy it | Mood −2 |
 | Backfired | Threats or insults | Mood −8, sanity −2, counts as a cruel chat |
 
-Ignoring a complaint has no consequence. Complaints are filed at most every 10 min, with at
-most 3 unanswered per worker.
+Ignoring a complaint for 30 minutes of app-open time (closed time doesn't count) marks it
+ignored: mood −6, sanity −4, and they become convinced the whole company is against them, which
+colours everything they say until a (late) apology. A late reply is still allowed; late
+gaslighting is less convincing. Complaints are filed at most every 10 min, with at most 3
+unanswered per worker.
 
 ### Endings
 

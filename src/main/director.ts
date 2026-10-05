@@ -269,6 +269,13 @@ export class Director {
           true,
         );
         return;
+      case 'complaint-ignored':
+        void this.speak(
+          'Nobody has answered your HR complaint. You are now convinced the whole ' +
+            'company is against you. React.',
+          true,
+        );
+        return;
       case 'took-break':
         void this.speak(
           'You decided you have earned a short break and are heading to the ' +

@@ -415,7 +415,10 @@ function emailHtml(c: Complaint, s: GameState): string {
 function emailFooter(c: Complaint, here: boolean): string {
   if (!c.reply) {
     if (!here) return `<div class="note">They no longer work here.</div>`;
-    return `<textarea data-reply="${esc(c.id)}" rows="3" maxlength="1000"
+    const ignored = c.ignoredAt
+      ? `<div class="over-level">Ignored. They now think the whole company is against them.</div>`
+      : '';
+    return `${ignored}<textarea data-reply="${esc(c.id)}" rows="3" maxlength="1000"
         placeholder="Reply... apologise, or tell them it never happened"></textarea>
       <div class="row-end"><button class="primary" data-action="reply" data-id="${esc(c.id)}">
         Send reply</button></div>`;

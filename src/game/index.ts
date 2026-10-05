@@ -5,7 +5,7 @@
 
 export { act } from './actions';
 export { deriveAttitude } from './attitude';
-export { resolveComplaint } from './complaints';
+export { COMPLAINT_IGNORED_MINUTES, resolveComplaint } from './complaints';
 export { describeCondition } from './describe';
 export { projectQuality } from './formulas';
 export {

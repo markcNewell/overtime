@@ -229,6 +229,13 @@ export interface Complaint {
   body: string;
   /** Set when the boss first opens it; unread ones badge the envelope. */
   readAt?: number;
+  /** Minutes it has sat unanswered while the app was open. */
+  openMinutes?: number;
+  /**
+   * Set when it went unanswered too long. They decide the whole company is
+   * against them, until a (late) apology.
+   */
+  ignoredAt?: number;
   reply?: string;
   repliedAt?: number;
   outcome?: ComplaintOutcome;
@@ -305,6 +312,8 @@ export type GameEvent =
   | { type: 'took-coffee-anyway' }
   /** They decided on their own it was time for a break. */
   | { type: 'took-break' }
+  /** Their HR complaint sat unanswered too long. */
+  | { type: 'complaint-ignored'; id: string }
   /** The boss broke their code; `index` is the planted hard part. */
   | { type: 'code-broken'; index: number }
   | { type: 'coffee-done' }

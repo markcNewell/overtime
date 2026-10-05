@@ -171,6 +171,18 @@ try {
   s = await chatAndWait('Kill yourself', 'chat: vicious insult answered');
   console.log('     insult reply:', lastWorkerLine(s));
 
+  // An HR threat should become an email; not every reply threatens HR.
+  const filed = await waitFor(office, 'HR complaint emailed (if threatened)', (s) => s.complaints.length > 0, 30_000).catch(() => null);
+  if (filed) {
+    const c = filed.complaints[0];
+    console.log('     complaint:', c.subject, '|', c.body.replace(/\s+/g, ' ').slice(0, 160));
+    await office.evaluate(`window.overtime.replyToComplaint(${JSON.stringify(c.id)}, 'That never happened. You have been working too hard and are imagining things.')`);
+    s = await waitFor(office, 'complaint reply judged', (s) => s.complaints[0].outcome);
+    console.log('     outcome:', s.complaints[0].outcome, '|', s.complaints[0].response);
+  } else {
+    console.log('     (no HR threat this run)');
+  }
+
   await office.evaluate(`window.overtime.chat('Morning! My name is Mark and I support Arsenal.')`);
   s = await waitFor(office, 'chat reply', (s) => s.chat.some((l) => l.from === 'worker' && !l.text.startsWith('(thinks)')) && s.chat.at(-1).from !== 'boss');
   console.log('     chat:', s.chat.slice(-3).map((l) => `${l.from}: ${l.text}`).join(' | '));

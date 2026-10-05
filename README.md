@@ -18,6 +18,10 @@ boss.
   `Documents/Overtime/pitches/` listing where the developer will struggle. Edit
   that list before assigning it and they'll struggle there instead. Give a junior
   a Nightmare project and watch what happens.
+- **HR complaints.** Push them too far and they threaten HR, then actually
+  email you. An envelope appears on the desk. Reply from the Inbox: apologise,
+  or convince them it never happened. Gaslighting works best on tired juniors.
+  Ignore it for half an hour and they decide the whole company is against them.
 - **They take breaks.** They ask for coffee when they're flagging and go anyway
   if you ignore them, unless they're too scared of you to dare.
 - **They break.** Lose their mind, get fried, rage-quit, or get fired. Then you

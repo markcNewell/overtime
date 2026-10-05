@@ -208,13 +208,17 @@ export class Brain {
     try {
       if (!worker) throw new Error('No worker to chat with');
       const raw = await this.runner.run(personaSystem(state, worker, message),
-        chatPrompt(message, feelingNote(state, worker)), CHAT_RUN);
-      const reply = parseChatReply(raw, message, firstName(worker));
+        chatPrompt(message, feelingNote(state, worker), worker), CHAT_RUN);
+      const reply = parseChatReply(raw, message, firstName(worker),
+        worker.activity);
       this.lastError = undefined;
       return { reply, offline: false };
     } catch (err) {
       this.fail(err);
-      return { reply: fallbackChat(message, this.rng), offline: true };
+      return {
+        reply: fallbackChat(message, worker, this.rng),
+        offline: true,
+      };
     }
   }
 

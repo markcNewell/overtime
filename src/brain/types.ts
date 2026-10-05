@@ -4,6 +4,7 @@
 
 import type {
   Candidate,
+  ChatRequest,
   ChatTone,
   Pitch,
 } from '../shared/types';
@@ -25,6 +26,8 @@ export interface ChatReply {
   tone: ChatTone;
   /** A fact about the boss worth keeping. */
   remember?: string;
+  /** Something the worker agreed to do: take a break or get back to work. */
+  action?: ChatRequest;
 }
 
 /** What a departing worker leaves behind. */

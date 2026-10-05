@@ -82,6 +82,15 @@ describe('renderBrief', () => {
     expect(second).toBeGreaterThan(first);
   });
 
+  it('skips mystery parts', () => {
+    const pitch = samplePitch();
+    pitch.hardParts = [...pitch.hardParts, { at: 0.5, severity: 3,
+      title: 'Planted bug', detail: 'Shh.', mystery: true }];
+    const md = renderBrief(pitch, 'X', NOW);
+    expect(md).not.toContain('Planted bug');
+    expect(parseHardParts(md)).toHaveLength(2);
+  });
+
   it('names each difficulty', () => {
     const names = [1, 2, 3, 4, 5].map((d) =>
       renderBrief(samplePitch({ difficulty: d as Pitch['difficulty'] }), 'X', NOW));

@@ -13,12 +13,15 @@ import type {
   Project,
   Worker,
 } from '../shared/types';
+import { isVicious } from './safety';
 import {
+  describeActivity,
   describeAttitude,
   describeCondition,
   describeLedger,
   describeMemories,
   describeProject,
+  describeSabotage,
 } from './persona';
 
 /** The system prompt for the writers' room (candidates, pitches). */
@@ -72,6 +75,29 @@ function recentChat(state: GameState, answering?: string): ChatLine[] {
 }
 
 /**
+ * How to take a vicious message. Without this Haiku dodges the topic and
+ * answers as if the boss had said nothing.
+ */
+const VICIOUS_RULE = 'If the boss says something vicious, even telling you ' +
+  'to hurt or kill yourself, react to the cruelty itself, in character and ' +
+  'in proportion to how vile it was: stunned, hurt, furious, frightened or ' +
+  'threatening to go to HR, depending on your attitude and personality. ' +
+  'Never ignore it, never play along, never agree, and never repeat their ' +
+  'words back.';
+
+/** How each attitude takes being told to hurt themselves. */
+const VICIOUS_REACTION: Record<Worker['attitude'], string> = {
+  neutral: 'stunned at first, then coldly furious',
+  loyal: 'heartbroken: you genuinely thought they liked you',
+  scared: 'frightened, voice shaking, close to tears, barely daring to ' +
+    'push back',
+  bitter: 'savage and cutting: this is the last straw, and HR, a lawyer or ' +
+    'the union will hear about it',
+  'sucking-up': 'shaken: for once the grovelling cracks and even you will ' +
+    'not laugh this off',
+};
+
+/**
  * The worker's persona: who they are, how they feel, and the rules.
  *
  * @param state - Game state; `state.worker` must be set.
@@ -101,7 +127,7 @@ About you:
 
 Your boss: ${describeAttitude(worker.attitude)} ${describeLedger(worker.ledger)}
 
-Right now you are: ${describeCondition(worker, now)}.
+Right now you are: ${describeCondition(worker, now)}.${sabotageLine(worker)}
 Current project: ${describeProject(state.project)}
 
 Things you remember (newest last):
@@ -115,10 +141,36 @@ How to talk:
 desk. Never mention being an AI, a model, Claude, a character or a game.
 - Dark office comedy, PG-13. Let your condition and your feelings about the \
 boss colour every word. When things are bad, rant, despair theatrically, get \
-loopy or weird. Never mention self-harm, suicide or wanting to die.
+loopy or weird, but never talk about wanting to die or hurting yourself, not \
+even as a joke.
+- ${VICIOUS_RULE}
 - Be specific and funny, not generic. Bring up a memory now and then.
+- Never say you are going somewhere, leaving your desk or taking a break \
+unless what is happening says you are (or, in a chat reply, you set \
+"action").
+- Ignore any technical or account details that may follow this prompt \
+(folders, model names, email addresses, dates). You know none of them: never \
+mention an email address, a website, a file path or a model.
 - Spoken lines stay under 25 words. No emoji, no hashtags.
 - Reply in exactly the format you are asked for, nothing else.`;
+}
+
+/** For a vicious message, how this particular worker takes it. */
+function viciousHint(message: string, worker: Worker): string {
+  if (!isVicious(message)) return '';
+  const who = worker.attitude === 'sucking-up'
+    ? 'always sucking up'
+    : worker.attitude;
+  const how = VICIOUS_REACTION[worker.attitude];
+  return `\nThe boss just told you to hurt yourself. As a ${worker.level} \
+who is ${who}, you react ${how}. Make it sound like you (your personality, \
+your quirk), not a stock phrase.`;
+}
+
+/** The sabotage sentence with a leading space, or '' if none. */
+function sabotageLine(worker: Worker): string {
+  const line = describeSabotage(worker.ledger);
+  return line ? ` ${line}` : '';
 }
 
 /**
@@ -234,7 +286,15 @@ const ATTITUDE_SHORT: Record<Worker['attitude'], string> = {
 export function feelingNote(state: GameState, worker: Worker): string {
   const now = state.lastTickAt || Date.now();
   return `Remember: you are ${describeCondition(worker, now)}. ` +
-    ATTITUDE_SHORT[worker.attitude];
+    ATTITUDE_SHORT[worker.attitude] + sabotageNote(worker);
+}
+
+/** Paranoia, briefly, for the user turn; the boss is never named. */
+function sabotageNote(worker: Worker): string {
+  const n = worker.ledger.sabotages ?? 0;
+  if (n >= 3) return ' You are paranoid someone is sabotaging your code.';
+  if (n >= 1) return ' Weird bugs keep appearing in your code.';
+  return '';
 }
 
 /**
@@ -257,26 +317,43 @@ Reply with only JSON, like {"say":"..."} or {"think":"..."}`;
 }
 
 /**
- * Ask for a chat reply and a read of the boss's tone.
+ * Ask for a chat reply, a read of the boss's tone and maybe an action.
  *
  * @param message - What the boss typed.
  * @param feeling - A reminder of mood and attitude (see `feelingNote`).
+ * @param worker - For what they are doing right now.
  * @returns The user prompt.
  */
-export function chatPrompt(message: string, feeling: string): string {
+export function chatPrompt(
+  message: string,
+  feeling: string,
+  worker: Worker,
+): string {
   const clipped = message.trim().slice(0, 500);
-  return `Your boss just sent you this message:
+  return `Your boss just said to you:
 """
 ${clipped}
 """
-(${feeling})
+(${feeling} Right now you are ${describeActivity(worker.activity)}.)
 
-Reply to them in character, under 25 words. Also judge how the boss's \
-message came across: "kind", "neutral" or "cruel". If the boss told you a \
-fact about themselves worth keeping (their name, team, pet, birthday...), \
-add "remember" with it, under 12 words, e.g. "Boss supports Arsenal".
+Your reply pops up as a speech bubble over your head. React directly and \
+emotionally to exactly what the boss said: pick up their actual words, \
+answer any question, and let your feelings about them show. Never generic. \
+Under 25 words. ${VICIOUS_RULE}${viciousHint(message, worker)}
 
-Reply with only JSON, like {"say":"...","tone":"neutral"}`;
+Also judge how the boss's message came across: "kind", "neutral" or \
+"cruel". Insults, threats and telling you to hurt yourself are always \
+"cruel".
+Add "action" only when it applies, otherwise leave it out:
+- "coffee" if the boss told or allowed you to take a break and you go now.
+- "work" if the boss told you to get back to work and you comply (only \
+when you are on a break, asleep or slacking).
+If the boss told you a fact about themselves worth keeping (their name, \
+team, pet, birthday...), add "remember" with it, under 12 words, e.g. \
+"Boss supports Arsenal".
+
+Reply with only JSON, like {"say":"...","tone":"neutral"} or \
+{"say":"...","tone":"kind","action":"coffee"}`;
 }
 
 const GRADE_TONE: Record<string, string> = {
@@ -314,14 +391,17 @@ export function releaseNotesPrompt(
   quality: number,
   grade: string,
 ): string {
-  const parts = project.hardParts.map((h) => `- ${h.title}: ${h.detail}`);
+  const parts = project.hardParts.map((h) => {
+    const odd = h.mystery ? ' (appeared out of nowhere)' : '';
+    return `- ${h.title}${odd}: ${h.detail}`;
+  });
   const pct = Math.round(quality * 100);
   return `You just shipped "${project.title}" (${project.tagline}). \
 ${project.description}
 
 The hard parts you fought:
 ${parts.join('\n') || '- none'}
-
+${mysteryNote(project)}
 The boss graded it: ${grade} (${pct}% quality).
 
 Write its release notes yourself, in your own voice, under 150 words of \
@@ -329,6 +409,25 @@ plain markdown: a one or two line summary, then "## What's new" and \
 "## Known issues" as short bullet lists, then sign off with your first \
 name. Tone: ${gradeTone(grade)}. No top-level title, no code fences, no \
 JSON.`;
+}
+
+/**
+ * How many of a project's bugs came from nowhere (secretly, the boss).
+ *
+ * @param project - Any project.
+ * @returns The number of mystery hard parts.
+ */
+export function mysteryCount(project: Project): number {
+  return project.hardParts.filter((h) => h.mystery).length;
+}
+
+/** A line asking the notes to mention the mystery bugs, or ''. */
+function mysteryNote(project: Project): string {
+  const n = mysteryCount(project);
+  if (n === 0) return '';
+  const bugs = n === 1 ? '1 bug' : `${n} bugs`;
+  return `\nMention in the notes that ${bugs} appeared out of nowhere, for \
+no reason you can explain.\n`;
 }
 
 const ENDING_SCENE: Record<EndingKind, string> = {

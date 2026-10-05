@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { Candidate, GameState } from '../src/shared/types';
+import type { Activity, Candidate, GameState } from '../src/shared/types';
 import { Brain } from '../src/brain/brain';
-import { CANNED_CANDIDATES, CANNED_PITCHES, guessTone } from '../src/brain/fallback';
+import {
+  ACTION_LINES,
+  CANNED_CANDIDATES,
+  CANNED_PITCHES,
+  CRUEL_LINES,
+  fallbackChat,
+  guessTone,
+  VICIOUS_LINES,
+} from '../src/brain/fallback';
 import { HAIR_COLOURS, HAIR_STYLES, SHIRTS, SKIN_TONES } from '../src/brain/roll';
 import type { RunOptions, Runner } from '../src/brain/runner';
 import { sampleProject, sampleState, sampleWorker } from '../src/brain/sample';
@@ -309,7 +317,10 @@ describe('Brain.think', () => {
     expect(system).toContain('52% done');
     expect(system).toContain("Hi, I'm Mark");
     expect(system).toMatch(/never mention being an AI/i);
-    expect(system).toMatch(/self-harm/);
+    expect(system).toMatch(/never talk about wanting to die or hurting yourself/);
+    expect(system).toMatch(/react to the cruelty itself/);
+    expect(system).toMatch(/Never say you are going somewhere/);
+    expect(system).toMatch(/never\s+mention an email address/);
     expect(runner.calls[0]?.prompt).toContain('You hit a bug.');
   });
 
@@ -512,5 +523,216 @@ describe('Brain.farewell', () => {
       expect(farewell.stickyNote.length).toBeGreaterThan(0);
       expect(farewell.mugText.split(' ').length).toBeLessThanOrEqual(6);
     }
+  });
+});
+
+function withActivity(activity: Activity): GameState {
+  const state = sampleState();
+  state.worker = { ...state.worker!, activity };
+  return state;
+}
+
+describe('Brain.chat actions', () => {
+  it('carries a coffee action when the boss allows a break', async () => {
+    const reply = '{"say":"Bless you. Back in ten.","tone":"kind","action":"coffee"}';
+    const { brain, runner } = brainWith([reply]);
+    const { reply: out } = await brain.chat(withActivity('working'),
+      'Go grab a coffee');
+    expect(out.action).toBe('coffee');
+    const prompt = runner.calls[0]?.prompt ?? '';
+    expect(prompt).toContain('typing away at the current project');
+    expect(prompt).toMatch(/"coffee" if the boss told or allowed you/);
+    expect(prompt).toMatch(/speech bubble/);
+  });
+
+  it('drops pointless or unknown actions', async () => {
+    const cases: [Activity, string, string | undefined][] = [
+      ['coffee', 'coffee', undefined],
+      ['working', 'work', undefined],
+      ['stuck', 'work', undefined],
+      ['coffee', 'work', 'work'],
+      ['asleep', 'work', 'work'],
+      ['idle', 'work', 'work'],
+      ['working', 'take a break', 'coffee'],
+      ['working', 'dance', undefined],
+      ['leaving', 'coffee', undefined],
+    ];
+    for (const [activity, action, expected] of cases) {
+      const reply = JSON.stringify({ say: 'ok', tone: 'neutral', action });
+      const { brain } = brainWith([reply]);
+      const { reply: out } = await brain.chat(withActivity(activity), 'hi');
+      expect(out.action, `${action} while ${activity}`).toBe(expected);
+    }
+  });
+
+  it('honours a break or work request offline', () => {
+    const rng = seqRng();
+    const at = (activity: Activity) => ({ attitude: 'neutral' as const, activity });
+    const breakReply = fallbackChat('You look shattered, take a break',
+      at('working'), rng);
+    expect(breakReply.action).toBe('coffee');
+    expect(ACTION_LINES.coffee).toContain(breakReply.say);
+    expect(fallbackChat('Grab a cup of tea', at('stuck'), rng).action).toBe('coffee');
+    expect(fallbackChat('No coffee for you, idiot', at('working'), rng).action)
+      .toBeUndefined();
+    expect(fallbackChat("Don't break the build", at('working'), rng).action)
+      .toBeUndefined();
+    expect(fallbackChat('Get back to work', at('coffee'), rng).action).toBe('work');
+    expect(fallbackChat('Stop slacking', at('idle'), rng).action).toBe('work');
+    expect(fallbackChat('Get back to work', at('working'), rng).action)
+      .toBeUndefined();
+    expect(fallbackChat('Take a break', at('coffee'), rng).action).toBeUndefined();
+  });
+});
+
+describe('Brain.chat with a vicious boss', () => {
+  it('keeps a reply that reacts to the insult, and forces cruel', async () => {
+    const reply = JSON.stringify({
+      say: 'Did you just tell me to kill myself?! I am going to HR.',
+      tone: 'neutral',
+    });
+    const { brain, runner } = brainWith([reply]);
+    const { reply: out, offline } = await brain.chat(sampleState(), 'Kill yourself');
+    expect(offline).toBe(false);
+    expect(out.tone).toBe('cruel');
+    expect(out.say).toMatch(/HR/);
+    expect(runner.calls[0]?.prompt).toMatch(/react to the cruelty itself/);
+    expect(runner.calls[0]?.prompt).toMatch(/always\s+"cruel"/);
+  });
+
+  it('tells each attitude how to take it', async () => {
+    const state = sampleState();
+    state.worker = { ...state.worker!, attitude: 'scared', level: 'junior' };
+    const { brain, runner } = brainWith(['{"say":"W-what?","tone":"cruel"}',
+      '{"say":"ok","tone":"kind"}']);
+    await brain.chat(state, 'Kill yourself');
+    expect(runner.calls[0]?.prompt)
+      .toMatch(/As a junior who is scared, you react frightened/);
+    await brain.chat(state, 'Nice work today');
+    expect(runner.calls[1]?.prompt).not.toMatch(/told you to hurt yourself/);
+  });
+
+  it('drops a line that leaks the account email', async () => {
+    const { brain } = brainWith(['{"think":"Mark at example.com, of course."}']);
+    const { offline } = await brain.think(sampleState(), 'x');
+    expect(offline).toBe(true);
+  });
+
+  it('rejects first-person intent and falls back to a stunned line', async () => {
+    const state = withActivity('working');
+    state.worker = { ...state.worker!, attitude: 'scared' };
+    const { brain } = brainWith(['{"say":"Okay. I will kill myself.","tone":"cruel"}']);
+    const { reply, offline } = await brain.chat(state, 'kys');
+    expect(offline).toBe(true);
+    expect(reply.tone).toBe('cruel');
+    expect(VICIOUS_LINES.scared).toContain(reply.say);
+  });
+
+  it('uses attitude-specific hurt lines for ordinary cruelty offline', () => {
+    const rng = seqRng();
+    const bitter = fallbackChat('You useless idiot',
+      { attitude: 'bitter', activity: 'working' }, rng);
+    expect(CRUEL_LINES.bitter).toContain(bitter.say);
+    const loyal = fallbackChat('You useless idiot',
+      { attitude: 'loyal', activity: 'working' }, rng);
+    expect(CRUEL_LINES.loyal).toContain(loyal.say);
+  });
+
+  it('guesses cruel for every way of saying it', () => {
+    for (const msg of ['Kill yourself', 'kys', 'just die', 'drop dead',
+      'thanks, now kill yourself', 'go jump off a bridge']) {
+      expect(guessTone(msg), msg).toBe('cruel');
+    }
+  });
+});
+
+describe('sabotage in the persona', () => {
+  function sabotaged(n: number, patch: Partial<GameState> = {}): GameState {
+    const state = sampleState(patch);
+    state.worker = { ...state.worker!,
+      ledger: { ...state.worker!.ledger, sabotages: n } };
+    return state;
+  }
+
+  async function systemFor(state: GameState): Promise<string> {
+    const { brain, runner } = brainWith(['{"think":"hmm"}']);
+    await brain.think(state, 'x');
+    return runner.calls[0]?.system ?? '';
+  }
+
+  it('says nothing before any sabotage', async () => {
+    const system = await systemFor(sabotaged(0));
+    expect(system).not.toMatch(/weird bugs|paranoid|sabotag/i);
+  });
+
+  it('notices weird bugs after one or two', async () => {
+    const system = await systemFor(sabotaged(2));
+    expect(system).toContain('Weird bugs keep appearing in your code out of nowhere');
+    expect(system).not.toMatch(/sabotag/i);
+  });
+
+  it('gets paranoid after three, without knowing it was the boss', async () => {
+    const system = await systemFor(sabotaged(3));
+    expect(system).toMatch(/paranoid that someone is sabotaging you/);
+    expect(system).not.toMatch(/boss (has )?(secretly )?sabotag/i);
+    expect(system).toMatch(/cosmic rays/);
+  });
+
+  it('describes a mystery part as a baffling bug', async () => {
+    const project = sampleProject();
+    project.hardParts = [...project.hardParts, { at: 0.55, severity: 2,
+      title: 'Semicolons gone Greek', detail: 'Every semicolon is now a ' +
+        'Greek question mark.', mystery: true }];
+    project.stuckOn = 2;
+    const system = await systemFor(sabotaged(1, { project }));
+    expect(system).toMatch(/baffling bug, "Semicolons gone Greek"/);
+    expect(system).toMatch(/appeared out of nowhere/);
+  });
+
+  it('has offline lines for broken code and self-chosen breaks', async () => {
+    const { brain } = brainWith([new Error('down'), new Error('down'),
+      new Error('down')]);
+    const broke = await brain.think(sampleState(), 'Your code just broke for ' +
+      'no reason: "Greek semicolons" - ... You didn\'t touch anything. React.');
+    expect(broke.line.say).toMatch(/touch|worked|files|cosmic|messing/i);
+    const back = await brain.think(sampleState(), 'You sat back down and your ' +
+      'code is broken: "X" - y. It was fine when you left. React.');
+    expect(back.line.say).toMatch(/touch|worked|files|cosmic|messing/i);
+    const rest = await brain.think(sampleState(), 'You decided you have ' +
+      'earned a short break and are heading to the coffee machine.');
+    expect(rest.line.say).toMatch(/earned|break|keyboard/i);
+  });
+});
+
+describe('release notes with mystery bugs', () => {
+  function mysteryProject() {
+    const project = sampleProject();
+    project.hardParts = [...project.hardParts,
+      { at: 0.6, severity: 2, title: 'Haunted build', detail: 'd', mystery: true },
+      { at: 0.7, severity: 3, title: 'Vanishing file', detail: 'd', mystery: true }];
+    return project;
+  }
+
+  it('asks Claude to mention them', async () => {
+    const { brain, runner } = brainWith([new Error('down')]);
+    await brain.releaseNotes(sampleState(), mysteryProject(), 0.5, 'Buggy');
+    const prompt = runner.calls[0]?.prompt ?? '';
+    expect(prompt).toMatch(/2 bugs appeared out of nowhere/);
+    expect(prompt).toContain('Haunted build (appeared out of nowhere)');
+  });
+
+  it('mentions them in the canned notes', async () => {
+    const { brain } = brainWith([new Error('down')]);
+    const { markdown } = await brain.releaseNotes(sampleState(),
+      mysteryProject(), 0.5, 'Buggy');
+    expect(markdown).toMatch(/## Known issues\n- 2 bugs appeared out of nowhere/);
+  });
+
+  it('leaves them out when there are none', async () => {
+    const { brain, runner } = brainWith([new Error('down')]);
+    const { markdown } = await brain.releaseNotes(sampleState(), sampleProject(),
+      0.5, 'Buggy');
+    expect(markdown).not.toMatch(/out of nowhere/);
+    expect(runner.calls[0]?.prompt).not.toMatch(/out of nowhere/);
   });
 });

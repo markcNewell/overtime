@@ -7,6 +7,8 @@
  */
 
 import type {
+  Activity,
+  ChatRequest,
   ChatTone,
   EndingKind,
   HardPart,
@@ -37,7 +39,15 @@ import {
   str,
   text,
 } from './parse';
+import { CHAT_REQUESTS, usefulAction } from './requests';
 import type { Rng } from './roll';
+import {
+  breaksCharacter,
+  isSelfHarmIntent,
+  isUnsafe,
+  isVicious,
+  leaksContext,
+} from './safety';
 import type {
   CandidateBio,
   ChatReply,
@@ -45,40 +55,6 @@ import type {
   PitchDraft,
   WorkerLine,
 } from './types';
-
-function phrases(list: readonly string[]): RegExp {
-  return new RegExp(`\\b(${list.join('|')})\\b`, 'i');
-}
-
-const UNSAFE = phrases([
-  'suicid\\w*', 'self[- ]?harm\\w*',
-  'kill(ing)? (my|your|him|her|them)sel(f|ves)', 'end(ing)? (it all|my life)',
-  'wants? to die', 'wanting to die', 'take my (own )?life', 'hang myself',
-]);
-const OUT_OF_CHARACTER = phrases([
-  'as an ai', 'an ai (language )?model', "i'?m an ai", 'i am an ai',
-  'language model', 'anthropic', "i'?m claude", 'i am claude', 'as claude',
-]);
-
-/**
- * Whether text touches topics the game never shows (self-harm).
- *
- * @param value - Any text.
- * @returns True if it should be thrown away.
- */
-export function isUnsafe(value: string): boolean {
-  return UNSAFE.test(value);
-}
-
-/**
- * Whether the worker has stepped out of character (mentions being an AI).
- *
- * @param value - A worker line.
- * @returns True if it should be thrown away.
- */
-export function breaksCharacter(value: string): boolean {
-  return OUT_OF_CHARACTER.test(value);
-}
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -103,9 +79,10 @@ export function cleanLine(x: unknown, maxLen: number, speaker = ''): string {
   return str(line, maxLen);
 }
 
-/** A worker-facing line that is present, safe and in character. */
+/** A worker line that is present, safe, private and in character. */
 function usableLine(line: string): boolean {
-  return line.length > 0 && !isUnsafe(line) && !breaksCharacter(line);
+  return line.length > 0 && !isSelfHarmIntent(line) &&
+    !breaksCharacter(line) && !leaksContext(line);
 }
 
 const LEVELS: readonly Level[] = ['junior', 'mid', 'senior', 'lead'];
@@ -436,12 +413,32 @@ export function toTone(x: unknown, fallback: ChatTone): ChatTone {
   return exact;
 }
 
+const ACTION_SYNONYMS: [RegExp, ChatRequest][] = [
+  [/break|rest|tea|breather/i, 'coffee'],
+  [/desk|back|resume/i, 'work'],
+];
+
+/**
+ * Coerce a chat action ("coffee", "work", or a close synonym).
+ *
+ * @param x - Raw field.
+ * @returns The action, or undefined when missing or unrecognisable.
+ */
+export function toAction(x: unknown): ChatRequest | undefined {
+  if (typeof x !== 'string') return undefined;
+  const wanted = x.trim().toLowerCase();
+  if (!wanted || /^(none|null|no|n\/a)$/.test(wanted)) return undefined;
+  const exact = CHAT_REQUESTS.find((a) => wanted.startsWith(a));
+  return exact ?? ACTION_SYNONYMS.find(([re]) => re.test(wanted))?.[1];
+}
+
 /**
  * A `chat` reply.
  *
  * @param raw - Model reply.
  * @param message - The boss's message, for a keyword tone fallback.
  * @param speaker - The worker's first name.
+ * @param activity - What the worker is doing, to drop pointless actions.
  * @returns The reply.
  * @throws Error when there is no usable line.
  */
@@ -449,12 +446,19 @@ export function parseChatReply(
   raw: string,
   message: string,
   speaker: string,
+  activity: Activity,
 ): ChatReply {
   const r = asRecord(extractJson(raw));
   if (!r) throw new Error('Chat reply is not an object');
   const say = cleanLine(r.say ?? r.reply ?? r.text, 200, speaker);
   if (!usableLine(say)) throw new Error('No usable chat line');
-  const reply: ChatReply = { say, tone: toTone(r.tone, guessTone(message)) };
+  // Telling someone to hurt themselves is cruel, whatever Claude thought.
+  const tone = isVicious(message)
+    ? 'cruel'
+    : toTone(r.tone, guessTone(message));
+  const reply: ChatReply = { say, tone };
+  const action = usefulAction(toAction(r.action), activity);
+  if (action) reply.action = action;
   const remember = cleanLine(r.remember, 100);
   if (remember.length >= 3 && usableLine(remember)) reply.remember = remember;
   return reply;
@@ -534,7 +538,7 @@ export function parseReleaseNotes(raw: string): string {
   const noTitle = unwrapped.trim().replace(/^#\s+[^\n]*\n+/, '');
   const md = text(noTitle, 2000);
   if (md.length < 40) throw new Error('Release notes too short');
-  if (isUnsafe(md) || breaksCharacter(md)) {
+  if (isSelfHarmIntent(md) || breaksCharacter(md) || leaksContext(md)) {
     throw new Error('Release notes failed the content check');
   }
   return md;

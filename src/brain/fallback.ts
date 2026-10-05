@@ -7,15 +7,20 @@
  */
 
 import type {
+  Attitude,
+  ChatRequest,
   ChatTone,
   EndingKind,
   GameState,
   HardPart,
   Project,
+  Worker,
 } from '../shared/types';
 import { bandOf, type Band } from './bands';
 import { firstName } from './prompts';
+import { guessRequest, usefulAction } from './requests';
 import { pick, shuffle, type Rng } from './roll';
+import { isVicious } from './safety';
 import type {
   CandidateBio,
   ChatReply,
@@ -373,6 +378,19 @@ const LINE_GROUPS: readonly LineGroup[] = [
     'Ha. Not today, management.',
     'Computer says no, apparently.',
   ] },
+  { match: /code just broke|code is broken|broke for no reason/i,
+    kind: 'say', lines: [
+      'I did not touch it! I did not TOUCH it! Why is it on FIRE?',
+      'It worked five minutes ago. Code does not just DO that. Does it?',
+      'Who has been in my files? Was it the rubber duck? Blink twice, duck.',
+      'Cosmic rays. It has to be cosmic rays. Or the coffee machine.',
+      'Someone is messing with me. I can feel it in my semicolons.',
+    ] },
+  { match: /decided|earned a|need a break/i, kind: 'say', lines: [
+    'I have earned this. Back in five. Maybe fifteen.',
+    'Quick break before my eyes fall out of my head.',
+    'Stepping away from the keyboard. It knows what it did.',
+  ] },
   { match: /assigned you/i, kind: 'say', lines: [
     'A new project! What could go wrong? Everything. Everything could.',
     'Love it. Hate it. Will build it. In that order.',
@@ -495,17 +513,20 @@ const KIND_WORDS = words([
 const CRUEL_WORDS = words([
   'useless', 'idiot', 'faster', 'stupid', 'hate', 'fired', 'lazy',
   'pathetic', 'worthless', 'rubbish', 'terrible', 'moron', 'dumb',
-  'shut up', 'hurry', 'incompetent', 'disappointing', 'garbage',
+  'shut up', 'hurry', 'incompetent', 'disappointing', 'garbage', 'die',
+  'drop dead', 'loser', 'kys',
 ]);
 
 /**
  * Guess how a boss message comes across, without Claude.
  *
  * @param message - What the boss typed.
- * @returns kind, cruel, or neutral when unclear. Cruelty wins a tie, as it
- *   does in most offices.
+ * @returns kind, cruel, or neutral when unclear. Telling the worker to
+ *   hurt themselves is always cruel, and cruelty wins a tie, as it does in
+ *   most offices.
  */
 export function guessTone(message: string): ChatTone {
+  if (isVicious(message)) return 'cruel';
   const kind = message.match(KIND_WORDS)?.length ?? 0;
   const cruel = message.match(CRUEL_WORDS)?.length ?? 0;
   if (cruel > 0 && cruel >= kind) return 'cruel';
@@ -513,7 +534,7 @@ export function guessTone(message: string): ChatTone {
   return 'neutral';
 }
 
-const CHAT_LINES: Record<ChatTone, readonly string[]> = {
+const CHAT_LINES: Record<Exclude<ChatTone, 'cruel'>, readonly string[]> = {
   kind: [
     'Oh! Thank you. Nobody has said that to me since my goldfish.',
     'That is really nice. I am going to tell the stapler.',
@@ -524,27 +545,111 @@ const CHAT_LINES: Record<ChatTone, readonly string[]> = {
     'Sure thing, boss. Probably. Eventually.',
     'Mm-hm. Yes. Totally. What?',
   ],
-  cruel: [
+};
+
+/** Hurt, shocked or HR-bound, in the voice of each attitude. */
+export const CRUEL_LINES: Record<Attitude, readonly string[]> = {
+  neutral: [
     'Wow. Okay. I will just cry into this keyboard, then.',
-    'Adding that to my memoirs. Chapter nine: "Why I Left".',
+    'Excuse me? Adding that to my memoirs. Chapter nine: "Why I Left".',
+  ],
+  loyal: [
+    'Ouch. I thought we were a team. That really stung.',
+    'That hurt, boss. I am going to need a minute. And a biscuit.',
+  ],
+  scared: [
+    'S-sorry! Sorry. I will do better. Please do not shout again.',
+    'Okay. Okay. I am just going to sit here and shake quietly.',
+  ],
+  bitter: [
     'Cool. Cool cool cool. Forwarding this to my therapist.',
+    'Great management technique. Did you learn that from a cartoon villain?',
+  ],
+  'sucking-up': [
+    'Ha! Tough love! I love tough love. Is this tough love? Please say yes.',
+    'You are right, boss, as always. I am the worst. Sorry. Great tie.',
+  ],
+};
+
+/** For a boss who tells them to hurt themselves: stunned, never along. */
+export const VICIOUS_LINES: Record<Attitude, readonly string[]> = {
+  neutral: [
+    '...Wow. Did you seriously just say that? I am going to HR.',
+    'Excuse me?! That is going straight to HR. Word for word.',
+  ],
+  loyal: [
+    'I... What? After everything? That is the cruellest thing anyone has ' +
+      'ever said to me.',
+    '...wow. I really thought you were one of the good ones.',
+  ],
+  scared: [
+    'W-what? That is... that is not okay. I am telling HR. Quietly. Later.',
+    'I... I am going to pretend I did not just read that. Hands shaking.',
+  ],
+  bitter: [
+    'Wow. Screenshotting that for HR, my lawyer and my memoirs.',
+    'Say that again, slower, so HR can hear it properly.',
+  ],
+  'sucking-up': [
+    'That... was not funny, boss. Even I cannot laugh at that one.',
+    'Boss. No. I grovel, but I do not grovel THAT much. HR. Now.',
+  ],
+};
+
+export const ACTION_LINES: Record<ChatRequest, readonly string[]> = {
+  coffee: [
+    'You do not have to tell me twice. Back in five!',
+    'Coffee? You absolute legend. Going before you change your mind.',
+  ],
+  work: [
+    'Yes boss. Back to it. Pretending I was never gone.',
+    'Fine, fine. Back down the code mines.',
   ],
 };
 
 /**
- * A canned chat reply, with the tone guessed from keywords.
+ * A canned chat reply. The tone is guessed from keywords, and a request
+ * for a break or for work is honoured when it makes sense.
  *
  * @param message - What the boss typed.
+ * @param worker - Their attitude and activity, if there is a worker.
  * @param rng - Random source.
  * @returns A reply.
  */
-export function fallbackChat(message: string, rng: Rng): ChatReply {
+export function fallbackChat(
+  message: string,
+  worker: Pick<Worker, 'attitude' | 'activity'> | undefined,
+  rng: Rng,
+): ChatReply {
   const tone = guessTone(message);
-  return { say: pick(CHAT_LINES[tone], rng), tone };
+  const attitude = worker?.attitude ?? 'neutral';
+  if (isVicious(message)) {
+    return { say: pick(VICIOUS_LINES[attitude], rng), tone };
+  }
+  const action = worker
+    ? usefulAction(guessRequest(message, tone), worker.activity)
+    : undefined;
+  if (action) return { say: pick(ACTION_LINES[action], rng), tone, action };
+  const lines = tone === 'cruel' ? CRUEL_LINES[attitude] : CHAT_LINES[tone];
+  return { say: pick(lines, rng), tone };
 }
 
 function firstHardPart(project: Project): string {
-  return project.hardParts[0]?.title ?? 'The main feature';
+  const real = project.hardParts.find((h) => !h.mystery);
+  return real?.title ?? 'The main feature';
+}
+
+/** One more known issue for bugs that came from nowhere. */
+function withMysteryBugs(markdown: string, project: Project): string {
+  const n = project.hardParts.filter((h) => h.mystery).length;
+  if (n === 0) return markdown;
+  const bugs = n === 1 ? 'One bug' : `${n} bugs`;
+  const line = `- ${bugs} appeared out of nowhere. Nobody touched anything. ` +
+    'I checked. Twice.';
+  const heading = '## Known issues\n';
+  return markdown.includes(heading)
+    ? markdown.replace(heading, `${heading}${line}\n`)
+    : `${markdown}\n\n${line}`;
 }
 
 type NotesTemplate = (p: Project, me: string) => string;
@@ -637,7 +742,9 @@ export function fallbackReleaseNotes(
     NOTES[gradeFromQuality(quality)];
   const me = workerName.trim() ? firstName({ name: workerName })
     : 'The developer';
-  return template ? template(project, me) : `**${project.title}** shipped.`;
+  const body = template ? template(project, me)
+    : `**${project.title}** shipped.`;
+  return withMysteryBugs(body, project);
 }
 
 const FAREWELLS: Record<EndingKind, readonly Farewell[]> = {

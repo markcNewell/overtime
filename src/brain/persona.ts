@@ -54,6 +54,16 @@ const ACTIVITY: Record<Activity, string> = {
 };
 
 /**
+ * What the worker is doing, in words.
+ *
+ * @param activity - The current activity.
+ * @returns e.g. "on a coffee break at the coffee station".
+ */
+export function describeActivity(activity: Activity): string {
+  return ACTIVITY[activity];
+}
+
+/**
  * Describe the worker's condition in a few plain words.
  *
  * @param worker - The worker.
@@ -143,7 +153,11 @@ export function describeProject(project: Project | undefined): string {
   const stuck = project.stuckOn !== undefined
     ? project.hardParts[project.stuckOn]
     : undefined;
-  if (stuck) {
+  if (stuck?.mystery) {
+    lines.push(`You are stuck on a baffling bug, "${stuck.title}": ` +
+      `${stuck.detail} It appeared out of nowhere and nothing you did ` +
+      'explains it.');
+  } else if (stuck) {
     lines.push(`You are stuck on "${stuck.title}": ${stuck.detail}`);
   } else if (project.hardPartsHit.length >= project.hardParts.length) {
     lines.push('The worst of it is behind you.');
@@ -151,6 +165,24 @@ export function describeProject(project: Project | undefined): string {
     lines.push('It is going suspiciously smoothly.');
   }
   return lines.join(' ');
+}
+
+/**
+ * The boss's secret sabotage, as the worker experiences it. The worker
+ * must never learn it was the boss, so this only ever describes symptoms.
+ *
+ * @param ledger - Running counts (only `sabotages` is read).
+ * @returns A sentence, or '' when nothing has been sabotaged.
+ */
+export function describeSabotage(ledger: Ledger): string {
+  const n = ledger.sabotages ?? 0;
+  if (n <= 0) return '';
+  if (n <= 2) {
+    return 'Weird bugs keep appearing in your code out of nowhere.';
+  }
+  return "You're getting paranoid that someone is sabotaging you: bugs " +
+    'keep appearing out of nowhere. You suspect everything, from the boss ' +
+    'to the coffee machine, the last developer or cosmic rays.';
 }
 
 const MEMORY_TAG: Record<Memory['kind'], string> = {

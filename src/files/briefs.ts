@@ -118,7 +118,10 @@ export function renderBrief(
   const pitched = workerName.trim()
     ? `**Pitched to:** ${workerName.trim()} on ${when}`
     : `**Pitched:** ${when}`;
-  const parts = [...pitch.hardParts].sort((a, b) => a.at - b.at);
+  // Mystery parts are the boss's secret sabotage; they never go in a brief.
+  const parts = pitch.hardParts
+    .filter((h) => !h.mystery)
+    .sort((a, b) => a.at - b.at);
   return [
     `# ${oneLine(pitch.title)}`,
     '',
@@ -331,7 +334,9 @@ function unreadableNote(parts: readonly HardPart[]): string {
     "_The list above couldn't be read, so the developer will struggle where " +
       'the original pitch said:_',
     '',
-    ...parts.map((p) => `${hardPartLine(p).replace(/^- /, '* ')}`),
+    ...parts
+      .filter((p) => !p.mystery)
+      .map((p) => `${hardPartLine(p).replace(/^- /, '* ')}`),
     '',
   ].join('\n');
 }

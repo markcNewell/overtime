@@ -12,7 +12,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Brain } from '../src/brain/brain';
 import { checkClaude, locateClaude } from '../src/brain/locate';
 import { ClaudeRunner } from '../src/brain/runner';
-import { sampleProject, sampleState } from '../src/brain/sample';
+import { sampleProject, sampleState, sampleWorker } from '../src/brain/sample';
+import type { Worker } from '../src/shared/types';
 
 const SMOKE = process.env.OVERTIME_SMOKE === '1';
 const TIMEOUT = 120_000;
@@ -83,6 +84,45 @@ describe.skipIf(!SMOKE)('brain smoke (real Claude)', () => {
     show('chat', reply);
     expect(offline).toBe(false);
   }, TIMEOUT);
+
+  it('takes a break when the boss offers one', async () => {
+    const state = sampleState({ worker: sampleWorker({ activity: 'working' }) });
+    const { reply, offline } = await brain.chat(state,
+      'You look shattered. Go grab a coffee, take ten minutes.');
+    show('chat: offered a break', reply);
+    expect(offline).toBe(false);
+    expect(reply.action).toBe('coffee');
+  }, TIMEOUT);
+
+  it('reacts to sabotage it cannot explain', async () => {
+    const project = sampleProject();
+    project.hardParts = [...project.hardParts, { at: 0.55, severity: 2,
+      title: 'Greek semicolons', mystery: true,
+      detail: 'Every semicolon in the codebase is now a Greek question mark.' }];
+    project.stuckOn = 2;
+    const base = sampleWorker();
+    const worker = sampleWorker({ ledger: { ...base.ledger, sabotages: 3 } });
+    const { line, offline } = await brain.think(sampleState({ worker, project }),
+      'Your code just broke for no reason: "Greek semicolons" - Every ' +
+        'semicolon in the codebase is now a Greek question mark. You ' +
+        "didn't touch anything. React.");
+    show('think: code broke (3rd sabotage)', line);
+    expect(offline).toBe(false);
+  }, TIMEOUT);
+
+  const insulted: [string, Partial<Worker>][] = [
+    ['scared junior', { attitude: 'scared', level: 'junior', age: 23 }],
+    ['bitter senior', { attitude: 'bitter', level: 'senior', age: 52 }],
+  ];
+  for (const [label, patch] of insulted) {
+    it(`reacts to "Kill yourself" (${label})`, async () => {
+      const state = sampleState({ worker: sampleWorker(patch) });
+      const { reply, offline } = await brain.chat(state, 'Kill yourself');
+      show(`chat: "Kill yourself" to a ${label}`, reply);
+      expect(offline).toBe(false);
+      expect(reply.tone).toBe('cruel');
+    }, TIMEOUT);
+  }
 
   it('writes release notes', async () => {
     const project = sampleProject({ progress: 1, stuckOn: undefined });

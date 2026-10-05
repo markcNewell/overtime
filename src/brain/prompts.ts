@@ -8,11 +8,17 @@
 
 import type {
   ChatLine,
+  Complaint,
   EndingKind,
   GameState,
   Project,
   Worker,
 } from '../shared/types';
+import {
+  describeGaslightability,
+  describeOpenComplaint,
+  grievances,
+} from './complaints';
 import { isVicious } from './safety';
 import {
   describeActivity,
@@ -22,7 +28,12 @@ import {
   describeMemories,
   describeProject,
   describeSabotage,
+  feelsPersecuted,
+  firstName,
+  PERSECUTED,
 } from './persona';
+
+export { firstName };
 
 /** The system prompt for the writers' room (candidates, pitches). */
 export function writerSystem(): string {
@@ -33,19 +44,6 @@ export function writerSystem(): string {
     'You reply with only the JSON you are asked for: no prose, no code',
     'fences.',
   ].join(' ');
-}
-
-const HONORIFIC = /^(dr|mr|mrs|ms|mx|prof|sir|dame)\.?$/i;
-
-/**
- * The worker's first name, for "stay in character as X" and sign-offs.
- *
- * @param worker - Anyone with a name.
- * @returns The first word that isn't a title like "Dr.".
- */
-export function firstName(worker: Pick<Worker, 'name'>): string {
-  const words = worker.name.trim().split(/\s+/);
-  return words.find((w) => !HONORIFIC.test(w)) ?? worker.name;
 }
 
 function chatTranscript(chat: ChatLine[], worker: Worker): string {
@@ -127,7 +125,8 @@ About you:
 
 Your boss: ${describeAttitude(worker.attitude)} ${describeLedger(worker.ledger)}
 
-Right now you are: ${describeCondition(worker, now)}.${sabotageLine(worker)}
+Right now you are: ${describeCondition(worker, now)}.${sabotageLine(worker)}\
+${complaintLine(state, worker)}
 Current project: ${describeProject(state.project)}
 
 Things you remember (newest last):
@@ -165,6 +164,14 @@ function viciousHint(message: string, worker: Worker): string {
   return `\nThe boss just told you to hurt yourself. As a ${worker.level} \
 who is ${who}, you react ${how}. Make it sound like you (your personality, \
 your quirk), not a stock phrase.`;
+}
+
+/** The open-complaint sentence with a leading space, or '' if none. */
+function complaintLine(state: GameState, worker: Worker): string {
+  const lines = [describeOpenComplaint(state, worker)];
+  if (feelsPersecuted(state, worker)) lines.push(PERSECUTED);
+  const text = lines.filter(Boolean).join(' ');
+  return text ? ` ${text}` : '';
 }
 
 /** The sabotage sentence with a leading space, or '' if none. */
@@ -285,8 +292,11 @@ const ATTITUDE_SHORT: Record<Worker['attitude'], string> = {
  */
 export function feelingNote(state: GameState, worker: Worker): string {
   const now = state.lastTickAt || Date.now();
+  const persecuted = feelsPersecuted(state, worker)
+    ? ' You are sure the whole company is against you.'
+    : '';
   return `Remember: you are ${describeCondition(worker, now)}. ` +
-    ATTITUDE_SHORT[worker.attitude] + sabotageNote(worker);
+    ATTITUDE_SHORT[worker.attitude] + sabotageNote(worker) + persecuted;
 }
 
 /** Paranoia, briefly, for the user turn; the boss is never named. */
@@ -428,6 +438,85 @@ function mysteryNote(project: Project): string {
   const bugs = n === 1 ? '1 bug' : `${n} bugs`;
   return `\nMention in the notes that ${bugs} appeared out of nowhere, for \
 no reason you can explain.\n`;
+}
+
+/**
+ * Ask the worker to write a complaint email to the boss.
+ *
+ * @param worker - Who is complaining.
+ * @param trigger - The line that set it off.
+ * @returns The user prompt.
+ */
+export function complaintPrompt(worker: Worker, trigger: string): string {
+  const issues = grievances(worker.ledger);
+  const record = issues.length > 0
+    ? issues.map((g) => `- ${g}`).join('\n')
+    : '- Nothing you can count, but the vibe is hostile';
+  return `You have had enough and decided to escalate: you are emailing your \
+boss a formal complaint. You may say you have cc'd HR.
+
+The moment it boiled over: "${trigger.trim().slice(0, 300)}"
+Your grievances:
+${record}
+
+Base it on what actually happened (the grievances, your memories and the \
+recent chat), in your own voice. Funny and petty but genuinely aggrieved, \
+PG-13: count things, quote the boss, and demand at least one absurd remedy. \
+Never mention hurting yourself. No email addresses or websites.
+- subject: under 8 words
+- body: plain text under 100 words, with a greeting ("Dear ..." or \
+"Boss,"), then sign off with your first name. Use \n for line breaks.
+
+Reply with only JSON, like {"subject":"...","body":"..."}`;
+}
+
+const OUTCOME_GUIDE = `- "apology": a sincere apology, and you accept it. \
+Respond mollified.
+- "gaslit": the boss denies or reframes it ("that never happened", "you're \
+confused", "you agreed to it") and it works: you start doubting your own \
+memory. Respond confused and apologetic.
+- "unconvinced": you don't buy their denial or excuse, but you let it drop. \
+Respond coldly.
+- "backfired": a threat, insult or nasty reply that makes things worse. \
+Respond hurt or furious.`;
+
+/**
+ * Ask how the boss's reply to a complaint lands.
+ *
+ * @param worker - Who complained, for how gaslightable they are.
+ * @param complaint - The complaint.
+ * @param reply - What the boss wrote back.
+ * @returns The user prompt.
+ */
+export function complaintReplyPrompt(
+  worker: Worker,
+  complaint: Complaint,
+  reply: string,
+): string {
+  const late = complaint.ignoredAt !== undefined;
+  const lateNote = late
+    ? '\nThis reply is late: it only came after you had been ignored for ' +
+      'ages and decided the whole company was against you. A sincere ' +
+      'apology can still land, but a late denial is much less convincing.\n'
+    : '';
+  return `You emailed your boss this complaint:
+Subject: ${complaint.subject}
+${complaint.body}
+
+The boss replied:
+"""
+${reply.trim().slice(0, 800)}
+"""
+${lateNote}
+Decide honestly how this lands, as yourself. \
+${describeGaslightability(worker, late)}
+Pick one outcome:
+${OUTCOME_GUIDE}
+
+Then answer the boss in your own voice, under 30 words; it pops up as a \
+speech bubble over your head. React to what they actually wrote.
+
+Reply with only JSON, like {"outcome":"unconvinced","response":"..."}`;
 }
 
 const ENDING_SCENE: Record<EndingKind, string> = {

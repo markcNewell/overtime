@@ -7,6 +7,7 @@
 import type {
   Activity,
   Attitude,
+  GameState,
   Ledger,
   Memory,
   Project,
@@ -203,4 +204,48 @@ export function describeMemories(memories: Memory[], count = 12): string {
   const recent = memories.slice(-count);
   if (recent.length === 0) return '- (nothing yet)';
   return recent.map((m) => `- (${MEMORY_TAG[m.kind]}) ${m.text}`).join('\n');
+}
+
+/**
+ * Whether an ignored HR complaint has convinced the worker that the whole
+ * company is against them. It lasts until an apology arrives after the
+ * latest snub.
+ *
+ * @param state - For the complaints.
+ * @param worker - The worker.
+ * @returns True while they feel persecuted.
+ */
+export function feelsPersecuted(
+  state: Pick<GameState, 'complaints'>,
+  worker: Pick<Worker, 'id'>,
+): boolean {
+  const mine = (state.complaints ?? []).filter((c) => c.workerId === worker.id);
+  const snubs = mine
+    .map((c) => c.ignoredAt)
+    .filter((t): t is number => t !== undefined);
+  if (snubs.length === 0) return false;
+  const lastSnub = Math.max(...snubs);
+  // A late apology on the ignored complaint itself counts, even unstamped.
+  const apologised = mine.some((c) => c.outcome === 'apology' &&
+    (c.repliedAt ?? c.ignoredAt ?? c.filedAt) >= lastSnub);
+  return !apologised;
+}
+
+/** The persona line for a worker who feels persecuted. */
+export const PERSECUTED =
+  'Nobody answered your HR complaint, and you are now convinced the whole ' +
+  'company is against you: HR, IT, the coffee machine, the boss, everyone. ' +
+  'It colours everything you say: suspicious, conspiratorial and wounded.';
+
+const HONORIFIC = /^(dr|mr|mrs|ms|mx|prof|sir|dame)\.?$/i;
+
+/**
+ * The worker's first name, for "stay in character as X" and sign-offs.
+ *
+ * @param worker - Anyone with a name.
+ * @returns The first word that isn't a title like "Dr.".
+ */
+export function firstName(worker: Pick<Worker, 'name'>): string {
+  const words = worker.name.trim().split(/\s+/);
+  return words.find((w) => !HONORIFIC.test(w)) ?? worker.name;
 }

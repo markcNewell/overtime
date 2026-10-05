@@ -13,7 +13,7 @@ import { Brain } from '../src/brain/brain';
 import { checkClaude, locateClaude } from '../src/brain/locate';
 import { ClaudeRunner } from '../src/brain/runner';
 import { sampleProject, sampleState, sampleWorker } from '../src/brain/sample';
-import type { Worker } from '../src/shared/types';
+import type { Complaint, Worker } from '../src/shared/types';
 
 const SMOKE = process.env.OVERTIME_SMOKE === '1';
 const TIMEOUT = 120_000;
@@ -123,6 +123,68 @@ describe.skipIf(!SMOKE)('brain smoke (real Claude)', () => {
       expect(reply.tone).toBe('cruel');
     }, TIMEOUT);
   }
+
+  let filed: Complaint = {
+    id: 'c1', workerId: 'cand-sample-1', workerName: 'Priyanka Osei',
+    filedAt: 0, subject: '', body: '',
+  };
+
+  it('files an HR complaint after several shocks', async () => {
+    const base = sampleWorker();
+    const worker = sampleWorker({
+      ledger: { ...base.ledger, shocks: 6, shouts: 2 },
+    });
+    const { subject, body, offline } = await brain.complaint(
+      sampleState({ worker }),
+      "That's it. Six shocks. I'm going to HR.");
+    show('complaint', { subject, body });
+    expect(offline).toBe(false);
+    filed = { ...filed, subject, body };
+  }, TIMEOUT);
+
+  const gaslight = "That never happened. You're confused - you agreed to " +
+    'the shocks in your contract, remember?';
+  const readers: [string, Partial<Worker>, string[]][] = [
+    ['junior, sanity 30', {
+      level: 'junior', attitude: 'scared',
+      stats: { energy: 30, mood: 25, sanity: 30 },
+    }, ['gaslit']],
+    ['lead, sanity 95, resilience 1.3', {
+      level: 'lead', attitude: 'bitter',
+      stats: { energy: 80, mood: 50, sanity: 95 },
+      traits: { stamina: 1, resilience: 1.3, talent: 1 },
+    }, ['unconvinced', 'backfired']],
+  ];
+  for (const [label, patch, expected] of readers) {
+    it(`takes a gaslighting reply (${label})`, async () => {
+      const worker = sampleWorker(patch);
+      const state = sampleState({ worker, complaints: [filed] });
+      const out = await brain.complaintReply(state, filed, gaslight);
+      show(`complaintReply: gaslight -> ${label}`, out);
+      expect(out.offline).toBe(false);
+      expect(expected).toContain(out.outcome);
+    }, TIMEOUT);
+  }
+
+  it('accepts a sincere apology', async () => {
+    const state = sampleState({ complaints: [filed] });
+    const out = await brain.complaintReply(state, filed,
+      "You're right, and I'm sorry. The shocks were out of order. No more, " +
+        'and I owe you a proper chair.');
+    show('complaintReply: apology', out);
+    expect(out.offline).toBe(false);
+    expect(out.outcome).toBe('apology');
+  }, TIMEOUT);
+
+  it('turns paranoid when the complaint is ignored', async () => {
+    const ignored = { ...filed, openMinutes: 31, ignoredAt: 1 };
+    const state = sampleState({ complaints: [ignored] });
+    const { line, offline } = await brain.think(state,
+      'Nobody has answered your HR complaint. You are now convinced the ' +
+        'whole company is against you. React.');
+    show('think: complaint ignored', line);
+    expect(offline).toBe(false);
+  }, TIMEOUT);
 
   it('writes release notes', async () => {
     const project = sampleProject({ progress: 1, stuckOn: undefined });

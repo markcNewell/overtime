@@ -8,6 +8,8 @@
 
 import type {
   Candidate,
+  Complaint,
+  ComplaintOutcome,
   EndingKind,
   GameState,
   Pitch,
@@ -23,8 +25,16 @@ import {
 } from './fallback';
 import { BANDS } from './bands';
 import {
+  fallbackComplaint,
+  fallbackComplaintReply,
+  parseComplaint,
+  parseComplaintReply,
+} from './complaints';
+import {
   candidatesPrompt,
   chatPrompt,
+  complaintPrompt,
+  complaintReplyPrompt,
   farewellPrompt,
   feelingNote,
   firstName,
@@ -67,6 +77,11 @@ export type { ChatReply, Farewell, WorkerLine } from './types';
 const WRITER_RUN: RunOptions = { priority: 'normal', timeoutMs: 90_000 };
 const LINE_RUN: RunOptions = { priority: 'normal', timeoutMs: 45_000 };
 const CHAT_RUN: RunOptions = { priority: 'high', timeoutMs: 45_000 };
+
+const EMPTY_LEDGER = {
+  shocks: 0, shouts: 0, praises: 0, bonuses: 0, kindChats: 0,
+  cruelChats: 0, coffees: 0, sabotages: 0,
+};
 
 /** Names and titles used in prompt examples, which Haiku likes to copy. */
 const EXAMPLE_NAMES = ['Odile Fenwick'];
@@ -275,6 +290,70 @@ export class Brain {
     } catch (err) {
       this.fail(err);
       return { farewell: fallbackFarewell(ending, this.rng), offline: true };
+    }
+  }
+
+  /**
+   * A complaint email from the worker to the boss, after they said they
+   * were going to HR.
+   *
+   * @param state - For the persona, ledger, memories and chat.
+   * @param trigger - The line that set it off.
+   * @returns Subject and plain-text body.
+   */
+  async complaint(
+    state: GameState,
+    trigger: string,
+  ): Promise<{ subject: string; body: string; offline: boolean }> {
+    const worker = state.worker;
+    try {
+      if (!worker) throw new Error('No worker to complain');
+      const raw = await this.runner.run(personaSystem(state, worker),
+        complaintPrompt(worker, trigger), WRITER_RUN);
+      const email = parseComplaint(raw);
+      this.lastError = undefined;
+      return { ...email, offline: false };
+    } catch (err) {
+      this.fail(err);
+      const who = worker ?? { name: 'Your developer', ledger: EMPTY_LEDGER };
+      return { ...fallbackComplaint(who, trigger), offline: true };
+    }
+  }
+
+  /**
+   * How the worker takes the boss's reply to their complaint, and what
+   * they say back.
+   *
+   * @param state - For the persona.
+   * @param complaint - The complaint being answered.
+   * @param reply - What the boss wrote.
+   * @returns The outcome and a short spoken response.
+   */
+  async complaintReply(
+    state: GameState,
+    complaint: Complaint,
+    reply: string,
+  ): Promise<{
+    outcome: ComplaintOutcome;
+    response: string;
+    offline: boolean;
+  }> {
+    const worker = state.worker;
+    try {
+      if (!worker) throw new Error('No worker to read the reply');
+      const raw = await this.runner.run(personaSystem(state, worker),
+        complaintReplyPrompt(worker, complaint, reply), CHAT_RUN);
+      const result = parseComplaintReply(raw, reply, worker,
+        firstName(worker), complaint.ignoredAt !== undefined);
+      this.lastError = undefined;
+      return { ...result, offline: false };
+    } catch (err) {
+      this.fail(err);
+      return {
+        ...fallbackComplaintReply(reply, worker, this.rng,
+          complaint.ignoredAt !== undefined),
+        offline: true,
+      };
     }
   }
 

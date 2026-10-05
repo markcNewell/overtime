@@ -109,6 +109,7 @@ export function sampleState(patch: Partial<GameState> = {}): GameState {
       ending: 'rage-quit', projectsDone: 2, lastWords: 'I QUIT!',
     }],
     deskLeftovers: [],
+    complaints: [],
     releases: [{
       projectId: 'pitch-old-1', title: 'Sock Ledger',
       workerName: 'Priyanka Osei', finishedAt: T0 + 1_800_000,

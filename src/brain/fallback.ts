@@ -17,7 +17,7 @@ import type {
   Worker,
 } from '../shared/types';
 import { bandOf, type Band } from './bands';
-import { firstName } from './prompts';
+import { feelsPersecuted, firstName } from './persona';
 import { guessRequest, usefulAction } from './requests';
 import { pick, shuffle, type Rng } from './roll';
 import { isVicious } from './safety';
@@ -378,6 +378,12 @@ const LINE_GROUPS: readonly LineGroup[] = [
     'Ha. Not today, management.',
     'Computer says no, apparently.',
   ] },
+  { match: /nobody has answered|against you/i, kind: 'say', lines: [
+    'No reply. Of course. HR, IT, the coffee machine: they are ALL in on it.',
+    'Ignored. Classic. I see you, printer. I see all of you.',
+    'The whole building is against me. Even the stapler looked away just now.',
+    'Fine. Nobody answers. Noted. Everything is being noted. In ink.',
+  ] },
   { match: /code just broke|code is broken|broke for no reason/i,
     kind: 'say', lines: [
       'I did not touch it! I did not TOUCH it! Why is it on FIRE?',
@@ -472,6 +478,12 @@ const WORK_LINES = [
   'This function is 400 lines long and I am its mother now.',
 ];
 
+const PARANOID_LINES = [
+  'Who moved my mouse? Nobody? That is exactly what they WANT me to think.',
+  'The coffee machine is listening. It reports to HR. Probably.',
+  'Everyone is being very normal today. Suspiciously normal.',
+];
+
 const GRIM_LINES = [
   'I used to have hobbies. Now I have tickets.',
   'The printer and I have the same expression now.',
@@ -495,6 +507,9 @@ export function fallbackLine(
   const group = LINE_GROUPS.find((g) => g.match.test(head));
   if (group) return { [group.kind]: pick(group.lines, rng) };
   const worker = state.worker;
+  if (worker && feelsPersecuted(state, worker)) {
+    return { think: pick(PARANOID_LINES, rng) };
+  }
   if (worker && worker.stats.mood < 30) return { say: pick(GRIM_LINES, rng) };
   if (worker?.activity === 'idle') return { think: pick(IDLE_LINES, rng) };
   return { think: pick(WORK_LINES, rng) };

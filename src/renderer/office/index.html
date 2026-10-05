@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>Overtime: The Office</title>
+    <link rel="stylesheet" href="office.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">☕</span>
+        <div>
+          <h1>Pointless Apps Ltd</h1>
+          <p class="subtitle" id="summary">The boss's office</p>
+        </div>
+      </div>
+      <span class="brain" id="brain"></span>
+    </header>
+    <nav class="tabs" id="tabs">
+      <button data-tab="hire">Hire</button>
+      <button data-tab="projects">Projects</button>
+      <button data-tab="staff">Staff file</button>
+      <button data-tab="chat">Chat</button>
+      <button data-tab="settings">Settings</button>
+    </nav>
+    <main id="content"></main>
+    <section class="chat-entry" id="chat-entry" hidden>
+      <form id="chat-form">
+        <input
+          id="chat-input"
+          type="text"
+          maxlength="300"
+          autocomplete="off"
+          placeholder="Say something to your employee..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+    <script src="office.js"></script>
+  </body>
+</html>

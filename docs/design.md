@@ -45,10 +45,10 @@ Hidden attitude, derived from the ledger of how the boss has treated them:
 
 Level capacity: junior 2, mid 3, senior 4, lead 5. `gap = difficulty − capacity`.
 
-- **Progress** per minute = `speed / baseMinutes`, `baseMinutes = 50 + 30 × (difficulty − 1)`
-  (50…170). `speed = skill × energyF × sanityF × boost × stuckF`:
+- **Progress** per minute = `speed / baseMinutes`, `baseMinutes = 45 + 15 × (difficulty − 1)`
+  (45…105). `speed = skill × energyF × sanityF × boost × stuckF`:
   - skill = `gap ≤ 0 ? 1 + 0.1 × min(2, −gap) : 1 / (1 + 0.35 × gap)`
-  - energyF = `0.4 + 0.6 × energy/100` (0 when asleep)
+  - energyF = `0.5 + 0.5 × energy/100` (0 when asleep)
   - sanityF = `0.7 + 0.3 × sanity/100`
   - stuckF = 0.25 while stuck on a hard part
 - **Energy**: working/stuck −`0.45 × (1 + 0.1 × (difficulty − 1)) / stamina`; idle −0.15;
@@ -60,6 +60,12 @@ Level capacity: junior 2, mid 3, senior 4, lead 5. `gap = difficulty − capacit
   `10 × severity × (1 + 0.3 × max(0, gap)) / talent` minutes.
 - **Coffee**: asks when energy < 25 (once). If ignored 15 min and mood < 30 or attitude is
   bitter, they go anyway. A break lasts 6 min. Mood +3 at the start.
+
+Simulated with all traits 1, a tick every 5 s, coffee whenever asked and severity-2 hard
+parts (`tests/game-tuning.test.ts`), with 2 / 3 hard parts: junior on d1 75 / 91 min,
+mid on d3 120 / 138, senior on d4 145 / 157, lead on d5 159 / 177; all Masterpiece.
+Trait extremes stretch this to 67–203 min. A junior on d5 never sent for coffee takes
+6.7 h and ships "Barely compiles"; shocked every 3 min they lose their mind in 74 min.
 
 ### Boss actions
 

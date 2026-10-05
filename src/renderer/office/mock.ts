@@ -95,6 +95,29 @@ function mockState(scenario: string): GameState {
       { kind: 'mug', text: "World's okayest dev", fromWorker: 'Dave' },
       { kind: 'sticky-note', text: 'Do not click him. Trust me.', fromWorker: 'Dave' },
     ],
+    complaints: [
+      {
+        id: 'k1',
+        workerId: 'c3',
+        workerName: 'Sam Reyes',
+        filedAt: now - 5 * HOUR,
+        subject: 'Re: the stapler incident',
+        body: 'Hi,\n\nI am writing to formally complain about being shouted at for using the good stapler.\n\nSam',
+        readAt: now - 4 * HOUR,
+        reply: 'There is no good stapler. There never was.',
+        repliedAt: now - 4 * HOUR,
+        outcome: 'gaslit',
+        response: 'Oh. I... could have sworn. Sorry, I think I need more sleep.',
+      },
+      {
+        id: 'k2',
+        workerId: 'c3',
+        workerName: 'Sam Reyes',
+        filedAt: now - 600_000,
+        subject: 'Formal complaint: repeated electrocution',
+        body: 'Dear boss,\n\nThis morning I was electrocuted seven times while typing. I have cc\'d HR. I would like this to stop, or at least be scheduled.\n\nRegards,\nSam',
+      },
+    ],
     releases: [
       {
         projectId: 'r1',
@@ -208,6 +231,8 @@ export function installMockApi(): void {
     openOffice: () => undefined,
     openPath: () => undefined,
     setInteractive: () => undefined,
+    readComplaint: () => undefined,
+    replyToComplaint: noop,
     focusWindow: () => undefined,
     updateSettings: noop,
     testClaude: async () => ({ ok: true, message: 'Claude is ready.' }),

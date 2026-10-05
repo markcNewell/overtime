@@ -91,6 +91,24 @@ stretch this to 73–201 min. A junior on d5 never sent for coffee takes 6.1 h a
 | Mess up their code (click the monitor) | Plants a mystery hard part at their current progress and knocks progress back 3 %. Mood −4, sanity −4. Severity 1–3, rising with each sabotage inside 30 min. Stuck on a mystery bug drains an extra 0.25 sanity a minute. They never know it was you, but get paranoid after a few. Planted during a coffee break, they find it when they sit back down. |
 | Fire | Starts the `fired` ending. |
 
+### HR complaints (added 05-10)
+
+When a worker *says* they're going to HR (a spoken line matching HR / human resources / formal
+complaint / report you), they email the boss a complaint written by Claude from what actually
+happened. There's no HR character; the email comes straight from the worker. The only
+notification is an envelope on the desk with an unread badge, which is safe for screen sharing.
+The boss replies in the office panel's Inbox, and Claude, as the worker, judges the reply:
+
+| Outcome | When | Effect |
+|---|---|---|
+| Apology | A sincere apology | Mood +10, counts as two kind chats |
+| Gaslit | Denial or reframing that works (likelier on tired, low-sanity, junior or scared workers) | Sanity −10, mood −3, memory "Maybe I imagined …?" |
+| Unconvinced | They don't buy it | Mood −2 |
+| Backfired | Threats or insults | Mood −8, sanity −2, counts as a cruel chat |
+
+Ignoring a complaint has no consequence. Complaints are filed at most every 10 min, with at
+most 3 unanswered per worker.
+
 ### Endings
 
 | Ending | Trigger | Animation |

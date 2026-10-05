@@ -13,6 +13,7 @@ const SHOTS = [
   { name: 'projects-pitches', mock: 'pitches', tab: 'projects' },
   { name: 'staff', mock: 'busy', tab: 'staff' },
   { name: 'chat', mock: 'busy', tab: 'chat' },
+  { name: 'inbox', mock: 'busy', tab: 'inbox' },
   { name: 'settings', mock: 'busy', tab: 'settings' },
 ];
 const SIZE = { width: 396, height: 500 };

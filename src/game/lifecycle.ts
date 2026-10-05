@@ -38,6 +38,7 @@ export function newGameState(settings: Settings, now: number): GameState {
     pastWorkers: [],
     deskLeftovers: [],
     releases: [],
+    complaints: [],
     chat: [],
     lastTickAt: now,
     settings: structuredClone(settings),

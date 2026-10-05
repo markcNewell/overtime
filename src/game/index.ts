@@ -5,6 +5,7 @@
 
 export { act } from './actions';
 export { deriveAttitude } from './attitude';
+export { resolveComplaint } from './complaints';
 export { describeCondition } from './describe';
 export { projectQuality } from './formulas';
 export {

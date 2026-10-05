@@ -44,7 +44,15 @@ function pitch(id: string, difficulty: 1 | 3 | 5): Pitch {
 /** A director wired to fakes, with a clock the test controls. */
 function setup(initial?: GameState) {
   let now = 1_000_000;
-  const calls = { think: [] as string[], chat: [] as string[], briefs: 0, releases: 0 };
+  const calls = {
+    think: [] as string[],
+    chat: [] as string[],
+    complaints: [] as string[],
+    replies: [] as string[],
+    briefs: 0,
+    releases: 0,
+  };
+  let complaintOutcome: 'apology' | 'gaslit' | 'unconvinced' | 'backfired' = 'gaslit';
   const published: GameState[] = [];
   const effects: Effect[] = [];
   const opened: OfficeTab[] = [];
@@ -73,6 +81,14 @@ function setup(initial?: GameState) {
       farewell: { lastWords: 'Bye', stickyNote: 'Run', mugText: 'NOPE' },
       offline,
     }),
+    complaint: async (_s, trigger) => {
+      calls.complaints.push(trigger);
+      return { subject: 'Formal complaint', body: 'You shocked me.', offline };
+    },
+    complaintReply: async (_s, _c, reply) => {
+      calls.replies.push(reply);
+      return { outcome: complaintOutcome, response: 'Oh. Maybe I imagined it.', offline };
+    },
   };
   const files: FilesLike = {
     writePitchBrief: async (_d, p) => {
@@ -325,6 +341,55 @@ describe('Director', () => {
     await settle();
     t.director.stop();
     expect(t.calls.think.slice(before).some((s) => s.startsWith('You sat back down'))).toBe(true);
+  });
+
+  it('threatening HR out loud emails the boss a complaint', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.setChatReply({ say: "That's it, I'm going to HR.", tone: 'cruel' });
+    await t.director.chat('You are useless');
+    await settle();
+    const s = t.director.getState();
+    expect(s.complaints).toHaveLength(1);
+    expect(s.complaints[0]).toMatchObject({ subject: 'Formal complaint', workerId: 'a' });
+    expect(t.effects).toContainEqual({ type: 'email' });
+    // A second threat straight away is just talk.
+    await t.director.chat('Still useless');
+    await settle();
+    t.director.stop();
+    expect(t.director.getState().complaints).toHaveLength(1);
+  });
+
+  it('gaslighting a complaint that works costs them sanity', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    t.setChatReply({ say: 'Reporting you to human resources!', tone: 'cruel' });
+    await t.director.chat('Work faster');
+    await settle();
+    const id = t.director.getState().complaints[0]!.id;
+    const sanity = t.director.getState().worker!.stats.sanity;
+    t.director.readComplaint(id);
+    await t.director.replyToComplaint(id, 'That never happened. You must be confused.');
+    t.director.stop();
+    const s = t.director.getState();
+    expect(t.calls.replies).toEqual(['That never happened. You must be confused.']);
+    expect(s.complaints[0]).toMatchObject({ outcome: 'gaslit', readAt: expect.any(Number) });
+    expect(s.worker!.stats.sanity).toBeLessThan(sanity);
+    expect(s.bubble?.text).toBe('Oh. Maybe I imagined it.');
+    // Answered complaints can't be answered twice.
+    await t.director.replyToComplaint(id, 'again');
+    expect(t.calls.replies).toHaveLength(1);
+  });
+
+  it('thinking about HR is not a complaint', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    (t.director as unknown as { applyLine(l: object): void }).applyLine({
+      think: 'Should I go to HR?',
+    });
+    await settle();
+    t.director.stop();
+    expect(t.director.getState().complaints).toHaveLength(0);
   });
 });
 

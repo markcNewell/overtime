@@ -13,6 +13,9 @@ import type { DirectAction, Effect, OfficeTab } from '../shared/ipc';
 import type {
   ChatLine,
   ChatRequest,
+  Complaint,
+  ComplaintOutcome,
+  ChatTone,
   EndingKind,
   GameEvent,
   GameState,
@@ -32,6 +35,22 @@ const THOUGHT_MAX_MS = 15 * 60_000;
 const ENDING_MS = 9_000;
 const CHAT_LOG_MAX = 100;
 const CHAT_INPUT_MAX = 300;
+const REPLY_INPUT_MAX = 1000;
+/** A threat to go to HR files an email, but not more often than this. */
+const COMPLAINT_GAP_MS = 10 * 60_000;
+/** Unanswered complaints pile up to this many, then threats are just talk. */
+const OPEN_COMPLAINTS_MAX = 3;
+const COMPLAINTS_KEPT = 30;
+/** Spoken lines that mean they're taking it to HR. */
+const HR_THREAT = /\b(HR|human resources)\b|formal complaint|report(ing)? you\b/i;
+
+/** How the worker's face reacts to each way a complaint can end. */
+const OUTCOME_TONE: Record<ComplaintOutcome, ChatTone> = {
+  apology: 'kind',
+  gaslit: 'neutral',
+  unconvinced: 'neutral',
+  backfired: 'cruel',
+};
 
 /** The subset of Brain the director uses, so tests can fake it. */
 export interface BrainLike {
@@ -66,6 +85,15 @@ export interface BrainLike {
     state: GameState,
     ending: EndingKind,
   ): Promise<{ farewell: Farewell; offline: boolean }>;
+  complaint(
+    state: GameState,
+    trigger: string,
+  ): Promise<{ subject: string; body: string; offline: boolean }>;
+  complaintReply(
+    state: GameState,
+    complaint: Complaint,
+    reply: string,
+  ): Promise<{ outcome: ComplaintOutcome; response: string; offline: boolean }>;
 }
 
 /** The file operations the director needs (src/files). */
@@ -125,6 +153,7 @@ export class Director {
   private ending: { startedAt: number; farewell?: Farewell } | undefined;
   private busy = false;
   private offline = false;
+  private filingComplaint = false;
   /** Bugs planted while they were away, announced when they come back. */
   private readonly unnoticedBugs = new Set<string>();
 
@@ -337,7 +366,10 @@ export class Director {
       case 'shock': {
         const yelps = SHOCK_YELPS[worker.attitude] ?? SHOCK_YELPS.neutral!;
         const yelp = yelps[Math.floor(this.deps.random() * yelps.length)];
-        if (yelp) this.setBubble(yelp, 'say');
+        if (yelp) {
+          this.setBubble(yelp, 'say');
+          this.maybeComplain(yelp);
+        }
         return;
       }
       case 'praise':
@@ -538,6 +570,91 @@ export class Director {
   }
 
   // ---------------------------------------------------------------------
+  // HR complaints
+
+  /** If they just threatened HR, make it real: an email lands on the desk. */
+  private maybeComplain(line: string): void {
+    if (!HR_THREAT.test(line)) return;
+    const worker = this.state.worker;
+    if (!worker || worker.activity === 'leaving' || this.filingComplaint) return;
+    const now = this.deps.now();
+    const mine = this.state.complaints.filter((c) => c.workerId === worker.id);
+    const last = mine.at(-1);
+    if (last && now - last.filedAt < COMPLAINT_GAP_MS) return;
+    if (mine.filter((c) => !c.reply).length >= OPEN_COMPLAINTS_MAX) return;
+    void this.fileComplaint(line, worker.id, worker.name);
+  }
+
+  private async fileComplaint(trigger: string, workerId: string, name: string): Promise<void> {
+    this.filingComplaint = true;
+    try {
+      const { subject, body, offline } = await this.deps.brain.complaint(this.state, trigger);
+      this.markOffline(offline);
+      if (!this.isStillHere(workerId)) return;
+      const now = this.deps.now();
+      const complaint: Complaint = {
+        id: `complaint-${now}-${Math.floor(this.deps.random() * 1e6)}`,
+        workerId,
+        workerName: name,
+        filedAt: now,
+        subject,
+        body,
+      };
+      const complaints = [...this.state.complaints, complaint].slice(-COMPLAINTS_KEPT);
+      this.state = { ...this.state, complaints };
+      this.addChat('system', `${name} emailed you a complaint: "${subject}"`);
+      this.deps.effect({ type: 'email' });
+      this.commit(true);
+    } catch (err) {
+      this.log('Complaint failed', err);
+    } finally {
+      this.filingComplaint = false;
+    }
+  }
+
+  readComplaint(id: string): void {
+    const now = this.deps.now();
+    if (!this.state.complaints.some((c) => c.id === id && !c.readAt)) return;
+    this.updateComplaint(id, { readAt: now });
+    this.commit();
+  }
+
+  /** Answer a complaint; Claude decides whether the gaslighting worked. */
+  async replyToComplaint(id: string, raw: string): Promise<void> {
+    const text = raw.trim().slice(0, REPLY_INPUT_MAX);
+    const complaint = this.state.complaints.find((c) => c.id === id);
+    if (!text || !complaint || complaint.reply) return;
+    const worker = this.state.worker;
+    if (!worker || worker.id !== complaint.workerId || worker.activity === 'leaving') return;
+    const now = this.deps.now();
+    this.updateComplaint(id, { reply: text, repliedAt: now, readAt: complaint.readAt ?? now });
+    this.addChat('boss', `(email) ${text}`);
+    this.commit(true);
+    const answered = this.state.complaints.find((c) => c.id === id) ?? complaint;
+    const { outcome, response, offline } = await this.deps.brain.complaintReply(
+      this.state,
+      answered,
+      text,
+    );
+    this.markOffline(offline);
+    this.updateComplaint(id, { outcome, response });
+    if (this.isStillHere(worker.id)) {
+      const result = game.resolveComplaint(this.state, outcome, complaint.subject, this.deps.now());
+      this.state = result.state;
+      this.handleEvents(result.events, result.state);
+      this.deps.effect({ type: 'react', tone: OUTCOME_TONE[outcome] });
+      this.setBubble(response, 'say');
+      this.addChat('worker', response);
+    }
+    this.commit(true);
+  }
+
+  private updateComplaint(id: string, patch: Partial<Complaint>): void {
+    const complaints = this.state.complaints.map((c) => (c.id === id ? { ...c, ...patch } : c));
+    this.state = { ...this.state, complaints };
+  }
+
+  // ---------------------------------------------------------------------
   // Endings
 
   private startEnding(kind: EndingKind): void {
@@ -611,6 +728,8 @@ export class Director {
       const kind = line.say ? 'say' : 'think';
       this.setBubble(text, kind);
       this.addChat('worker', kind === 'think' ? `(thinks) ${text}` : text);
+      // Only spoken threats count; muttering about HR in your head is free.
+      if (kind === 'say') this.maybeComplain(text);
     }
     if (line.remember) this.remember('self', line.remember);
   }

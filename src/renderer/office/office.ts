@@ -11,6 +11,8 @@ import type {
   Attitude,
   Candidate,
   ChatLine,
+  Complaint,
+  ComplaintOutcome,
   Difficulty,
   GameState,
   Leftover,
@@ -37,6 +39,10 @@ let candidateIndex = 0;
 let shortlistKey = '';
 /** Which pitch rows are expanded, so re-renders don't snap them shut. */
 const openPitches = new Set<string>();
+/** Half-written replies to complaints, kept across re-renders. */
+const drafts = new Map<string, string>();
+/** Complaints already reported as read, so we only tell main once. */
+const markedRead = new Set<string>();
 
 const content = byId('content');
 
@@ -375,6 +381,61 @@ function memoriesHtml(worker: Worker): string {
   return `<ul class="memories">${items}</ul>`;
 }
 
+// ----------------------------------------------------------------- inbox
+
+const OUTCOME_LABELS: Record<ComplaintOutcome, string> = {
+  apology: 'Apology accepted',
+  gaslit: 'They now think they imagined it',
+  unconvinced: "They didn't buy it",
+  backfired: 'That backfired',
+};
+
+function inboxTab(s: GameState): string {
+  if (s.complaints.length === 0) {
+    return `<div class="empty">No emails. Yet.</div>`;
+  }
+  const emails = [...s.complaints]
+    .reverse()
+    .map((c) => emailHtml(c, s))
+    .join('');
+  return `<p class="note">Answer however you like. Apologise, or convince them it never happened.</p>
+    ${emails}`;
+}
+
+function emailHtml(c: Complaint, s: GameState): string {
+  const here = s.worker?.id === c.workerId && s.worker.activity !== 'leaving';
+  return `<article class="card email ${c.reply ? '' : 'open'}">
+    <div class="email-head"><b>${esc(c.workerName)}</b><span class="muted">${when(c.filedAt)}</span></div>
+    <div class="email-subject">${esc(c.subject)}</div>
+    <div class="email-body">${esc(c.body)}</div>
+    ${emailFooter(c, here)}
+  </article>`;
+}
+
+function emailFooter(c: Complaint, here: boolean): string {
+  if (!c.reply) {
+    if (!here) return `<div class="note">They no longer work here.</div>`;
+    return `<textarea data-reply="${esc(c.id)}" rows="3" maxlength="1000"
+        placeholder="Reply... apologise, or tell them it never happened"></textarea>
+      <div class="row-end"><button class="primary" data-action="reply" data-id="${esc(c.id)}">
+        Send reply</button></div>`;
+  }
+  const yours = `<div class="email-reply"><b>You:</b> ${esc(c.reply)}</div>`;
+  if (!c.outcome) return `${yours}<div class="note">Waiting for them to read it...</div>`;
+  return `${yours}
+    <div class="email-reply"><b>${esc(c.workerName.split(' ')[0])}:</b> ${esc(c.response)}</div>
+    <span class="outcome ${c.outcome}">${OUTCOME_LABELS[c.outcome]}</span>`;
+}
+
+/** Opening the inbox counts as reading everything in it. */
+function markInboxRead(s: GameState): void {
+  for (const c of s.complaints) {
+    if (c.readAt || markedRead.has(c.id)) continue;
+    markedRead.add(c.id);
+    api.readComplaint(c.id);
+  }
+}
+
 // ------------------------------------------------------------------ chat
 
 function chatTab(s: GameState): string {
@@ -435,6 +496,7 @@ const TABS: Record<OfficeTab, (s: GameState) => string> = {
   hire: hireTab,
   projects: projectsTab,
   staff: staffTab,
+  inbox: inboxTab,
   chat: chatTab,
   settings: settingsTab,
 };
@@ -448,9 +510,20 @@ function render(force = false): void {
   if (!force && html === lastHtml) return;
   const atBottom = content.scrollTop + content.clientHeight >= content.scrollHeight - 20;
   const scroll = content.scrollTop;
+  const focused = (document.activeElement as HTMLElement | null)?.dataset?.reply;
   lastHtml = html;
   content.innerHTML = html;
   content.scrollTop = tab === 'chat' && atBottom ? content.scrollHeight : scroll;
+  if (tab === 'inbox') restoreDrafts(focused);
+}
+
+/** Put half-written replies back after the DOM was rebuilt. */
+function restoreDrafts(focused: string | undefined): void {
+  for (const box of content.querySelectorAll<HTMLTextAreaElement>('textarea[data-reply]')) {
+    const id = box.dataset.reply ?? '';
+    box.value = drafts.get(id) ?? '';
+    if (id === focused) box.focus();
+  }
 }
 
 function renderChrome(s: GameState): void {
@@ -465,6 +538,11 @@ function renderChrome(s: GameState): void {
   const labels = { ok: 'Claude connected', thinking: 'Thinking...', offline: 'Claude offline' };
   brain.title = labels[s.brainStatus];
   brain.className = `brain ${s.brainStatus}`;
+  const unread = s.complaints.filter((c) => !c.readAt).length;
+  const count = byId('inbox-count');
+  count.hidden = unread === 0;
+  count.textContent = String(unread);
+  if (tab === 'inbox') markInboxRead(s);
 }
 
 function showTab(next: OfficeTab): void {
@@ -519,8 +597,23 @@ async function handleAction(el: HTMLElement): Promise<void> {
       return render(true);
     case 'test-claude':
       return testClaude();
+    case 'reply':
+      return sendReply(id);
   }
 }
+
+async function sendReply(id: string | undefined): Promise<void> {
+  if (!id) return;
+  const text = (drafts.get(id) ?? '').trim();
+  if (!text) return;
+  drafts.delete(id);
+  await api.replyToComplaint(id, text);
+}
+
+content.addEventListener('input', (event) => {
+  const box = event.target as HTMLTextAreaElement;
+  if (box.dataset.reply) drafts.set(box.dataset.reply, box.value);
+});
 
 // Remember which pitch rows are open across the five-second re-renders.
 content.addEventListener(

@@ -45,6 +45,7 @@ function withDefaults(state: GameState, settings: Settings): GameState {
     pastWorkers: state.pastWorkers ?? [],
     deskLeftovers: state.deskLeftovers ?? [],
     releases: state.releases ?? [],
+    complaints: state.complaints ?? [],
     chat: state.chat ?? [],
     worker: state.worker ? workerWithDefaults(state.worker) : undefined,
     settings: { ...settings, ...state.settings },

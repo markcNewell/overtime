@@ -208,6 +208,34 @@ export interface PastWorker {
   lastWords: string;
 }
 
+/**
+ * How a worker took the boss's reply to their HR complaint.
+ *
+ * - apology: they accept it and warm to you.
+ * - gaslit: they now doubt it ever happened (sanity hit).
+ * - unconvinced: they don't buy it, but let it go.
+ * - backfired: the reply made things worse (bitter or scared).
+ */
+export type ComplaintOutcome = 'apology' | 'gaslit' | 'unconvinced' | 'backfired';
+
+/** An HR complaint the worker emailed to the boss. */
+export interface Complaint {
+  id: string;
+  workerId: string;
+  workerName: string;
+  filedAt: number;
+  subject: string;
+  /** The email, in the worker's voice. */
+  body: string;
+  /** Set when the boss first opens it; unread ones badge the envelope. */
+  readAt?: number;
+  reply?: string;
+  repliedAt?: number;
+  outcome?: ComplaintOutcome;
+  /** The worker's answer to the boss's reply. */
+  response?: string;
+}
+
 export interface ChatLine {
   at: number;
   from: 'boss' | 'worker' | 'system';
@@ -246,6 +274,8 @@ export interface GameState {
   /** What the last worker left behind, waiting for the next hire. */
   deskLeftovers: Leftover[];
   releases: Release[];
+  /** Every HR complaint, newest last. Open ones have no `reply`. */
+  complaints: Complaint[];
   chat: ChatLine[];
   bubble?: Bubble;
   lastTickAt: number;

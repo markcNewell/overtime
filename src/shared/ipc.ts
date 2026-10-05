@@ -13,7 +13,13 @@ import type {
   Settings,
 } from './types';
 
-export type OfficeTab = 'hire' | 'projects' | 'staff' | 'chat' | 'settings';
+export type OfficeTab =
+  | 'hire'
+  | 'projects'
+  | 'staff'
+  | 'inbox'
+  | 'chat'
+  | 'settings';
 
 /** One-off visual effects the overlay plays on top of the normal pose. */
 export type Effect =
@@ -23,6 +29,8 @@ export type Effect =
   | { type: 'confetti' }
   /** Their monitor glitches: the boss just broke their code. */
   | { type: 'glitch' }
+  /** A new email (HR complaint) just landed: the envelope pops. */
+  | { type: 'email' }
   /** A brief facial reaction to what the boss just said. */
   | { type: 'react'; tone: ChatTone }
   | { type: 'ending'; kind: EndingKind };
@@ -47,6 +55,10 @@ export interface OvertimeApi {
   hire(candidateId: string): Promise<void>;
   rerollCandidates(): Promise<void>;
   assign(pitchId: string): Promise<void>;
+  /** Mark an HR complaint as opened. */
+  readComplaint(id: string): void;
+  /** Answer an HR complaint; the worker's response arrives via state. */
+  replyToComplaint(id: string, text: string): Promise<void>;
   openOffice(tab?: OfficeTab): void;
   /** Open a file or folder with the OS default app. */
   openPath(path: string): void;
@@ -73,6 +85,8 @@ export const CHANNELS = {
   hire: 'overtime:hire',
   rerollCandidates: 'overtime:reroll-candidates',
   assign: 'overtime:assign',
+  readComplaint: 'overtime:read-complaint',
+  replyToComplaint: 'overtime:reply-complaint',
   openOffice: 'overtime:open-office',
   openPath: 'overtime:open-path',
   setInteractive: 'overtime:set-interactive',

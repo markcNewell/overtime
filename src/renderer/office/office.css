@@ -559,6 +559,91 @@ details.pitch[open] > summary {
   margin-right: 4px;
 }
 
+/* ------------------------------------------------------------ inbox */
+
+.tabs .count {
+  display: inline-block;
+  min-width: 15px;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--bad);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.email {
+  margin-bottom: 8px;
+}
+
+.email.open {
+  border-color: var(--accent);
+}
+
+.email-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.email-subject {
+  font-weight: 600;
+}
+
+.email-body {
+  white-space: pre-wrap;
+  font-size: 12px;
+  border-left: 3px solid var(--line);
+  padding-left: 8px;
+}
+
+.email-reply {
+  font-size: 12px;
+}
+
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  width: 100%;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.outcome {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--line);
+}
+
+.outcome.apology {
+  background: #d9efe0;
+  color: #24663a;
+}
+
+.outcome.gaslit {
+  background: #efe1f5;
+  color: #6b2f86;
+}
+
+.outcome.backfired {
+  background: #f7d9d6;
+  color: #9a2e27;
+}
+
 /* ------------------------------------------------------------- chat */
 
 .chat-log {

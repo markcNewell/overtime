@@ -45,7 +45,7 @@ import {
 } from './windows';
 
 const TOGGLE_SHORTCUT = 'CommandOrControl+Alt+Shift+O';
-const OFFICE_TABS: OfficeTab[] = ['hire', 'projects', 'staff', 'chat', 'settings'];
+const OFFICE_TABS: OfficeTab[] = ['hire', 'projects', 'staff', 'inbox', 'chat', 'settings'];
 const ACTIONS: DirectAction['type'][] = [
   'shock',
   'shout',
@@ -198,6 +198,12 @@ function registerIpc(
   ipcMain.handle(CHANNELS.rerollCandidates, () => d.rerollCandidates());
   ipcMain.handle(CHANNELS.assign, (_e, id: unknown) => {
     if (typeof id === 'string') return d.assign(id);
+  });
+  ipcMain.on(CHANNELS.readComplaint, (_e, id: unknown) => {
+    if (typeof id === 'string') d.readComplaint(id);
+  });
+  ipcMain.handle(CHANNELS.replyToComplaint, (_e, id: unknown, text: unknown) => {
+    if (typeof id === 'string' && typeof text === 'string') return d.replyToComplaint(id, text);
   });
   ipcMain.handle(CHANNELS.updateSettings, (_e, patch: Partial<Settings>) => {
     updateSettings(sanitiseSettings(patch));

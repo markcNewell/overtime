@@ -23,6 +23,9 @@ const api: OvertimeApi = {
   hire: (id) => ipcRenderer.invoke(CHANNELS.hire, id),
   rerollCandidates: () => ipcRenderer.invoke(CHANNELS.rerollCandidates),
   assign: (id) => ipcRenderer.invoke(CHANNELS.assign, id),
+  readComplaint: (id) => ipcRenderer.send(CHANNELS.readComplaint, id),
+  replyToComplaint: (id, text) =>
+    ipcRenderer.invoke(CHANNELS.replyToComplaint, id, text),
   openOffice: (tab) => ipcRenderer.send(CHANNELS.openOffice, tab),
   openPath: (path) => ipcRenderer.send(CHANNELS.openPath, path),
   setInteractive: (on) => ipcRenderer.send(CHANNELS.setInteractive, on),

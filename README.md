@@ -17,6 +17,15 @@ boss.
 
 Close the app and they go home; time stops until you open it again.
 
+| | |
+|---|---|
+| ![Boss menu](docs/screenshots/boss-menu.png) | ![Shock](docs/screenshots/shock.png) |
+| ![Hover card](docs/screenshots/hover-card.png) | ![Rage-quit](docs/screenshots/rage-quit.png) |
+| ![Hiring](docs/screenshots/office-hire.png) | ![Projects](docs/screenshots/office-projects.png) |
+
+(The purple wallpaper is only for screenshots; on your desktop the scene floats
+over whatever is behind it.)
+
 ## What you need
 
 - Windows 10/11 or macOS.

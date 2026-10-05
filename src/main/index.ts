@@ -216,6 +216,9 @@ function registerIpc(
   ipcMain.on(CHANNELS.setInteractive, (_e, on: unknown) => {
     setOverlayInteractive(overlay, on === true);
   });
+  ipcMain.on(CHANNELS.focusWindow, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.focus();
+  });
 }
 
 /** Only accept known settings with the right types from a window. */

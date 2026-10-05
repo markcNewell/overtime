@@ -25,7 +25,7 @@ export interface MockUi {
   fireConfirm?: boolean;
   chat?: string;
   hover?: boolean;
-  /** A `data-hit` key whose tooltip to show. */
+  /** A `data-hit` key (or `act:<action>` in the menu) whose tooltip to show. */
   tip?: string;
   effect?: Effect;
   /** ms after load to play `effect`. */
@@ -71,7 +71,7 @@ function worker(now: number, look: Look, patch: Partial<Worker> = {}): Worker {
     hiredAt: now - 3 * 24 * 60 * MIN,
     stats: { energy: 72, mood: 70, sanity: 82 },
     xp: 64,
-    ledger: { shocks: 1, shouts: 0, praises: 3, bonuses: 0, kindChats: 4, cruelChats: 0, coffees: 2 },
+    ledger: { shocks: 1, shouts: 0, praises: 3, bonuses: 0, kindChats: 4, cruelChats: 0, coffees: 2, sabotages: 0 },
     attitude: 'loyal',
     memories: [],
     projectsDone: 2,
@@ -79,10 +79,20 @@ function worker(now: number, look: Look, patch: Partial<Worker> = {}): Worker {
     activitySince: now - 20 * MIN,
     recentShocks: [],
     recentPraises: [],
+    recentSabotages: [],
+    minutesSinceBreak: 25,
     lowMoodMinutes: 0,
     ...patch,
   };
 }
+
+const MYSTERY = {
+  at: 0.5,
+  severity: 2 as const,
+  title: 'Login works only on Tuesdays',
+  detail: 'Nobody touched the auth code. Allegedly.',
+  mystery: true,
+};
 
 function project(now: number, progress: number, stuckOn?: number): Project {
   const p: Project = {
@@ -94,6 +104,7 @@ function project(now: number, progress: number, stuckOn?: number): Project {
     hardParts: [
       { at: 0.3, severity: 2, title: 'Ferns refuse OAuth', detail: 'No thumbs.' },
       { at: 0.7, severity: 3, title: 'Surge pricing for cacti', detail: 'Nobody agrees.' },
+      MYSTERY,
     ],
     startedAt: now - 70 * MIN,
     progress,
@@ -200,11 +211,77 @@ const SCENARIOS: Record<string, Scenario> = {
       },
     }),
   },
-  menu: { build: at('working', LOOKS.priya), ui: { menu: true } },
+  menu: { build: at('working', LOOKS.priya), ui: { menu: true, tip: 'act:sabotage' } },
   'menu-fire': { build: at('working', LOOKS.priya), ui: { menu: true, fireConfirm: true } },
-  'menu-empty': { build: (now) => state(now, { deskLeftovers: LEFTOVERS }), ui: { menu: true } },
+  'menu-empty': { build: (now) => state(now, { deskLeftovers: LEFTOVERS }), ui: { menu: true, tip: 'act:office' } },
+  'menu-bubble': {
+    build: at('working', LOOKS.dev, {
+      extra: { bubble: { kind: 'say', text: 'Is that the clipboard of doom?', until: Date.now() + MIN } },
+    }),
+    ui: { menu: true },
+  },
   chat: { build: at('working', LOOKS.priya), ui: { chat: 'How is the fern app going?' } },
+  'chat-reply': {
+    build: at('working', LOOKS.priya, {
+      extra: {
+        bubble: {
+          kind: 'say',
+          text: 'Honestly? The ferns are winning. But I have a plan involving spreadsheets.',
+          until: Date.now() + MIN,
+        },
+      },
+    }),
+    ui: { chat: '', effect: { type: 'react', tone: 'neutral' }, effectAt: 0 },
+  },
+  'chat-waiting': { build: at('working', LOOKS.sam, { extra: { brainStatus: 'thinking' } }), ui: { chat: '' } },
+  'chat-coffee': {
+    build: at('coffee', LOOKS.mei, {
+      since: 40_000,
+      extra: { bubble: { kind: 'say', text: 'Five more minutes, then back to the ferns.', until: Date.now() + MIN } },
+    }),
+    ui: { chat: 'Enjoy it!', effect: { type: 'react', tone: 'kind' }, effectAt: 0 },
+  },
+  glitch: { build: at('working', LOOKS.priya), ui: { effect: { type: 'glitch' }, effectAt: SHOT_DELAY - 500 } },
+  'glitch-late': { build: at('working', LOOKS.priya), ui: { effect: { type: 'glitch' }, effectAt: SHOT_DELAY - 1100 } },
+  'mystery-stuck': {
+    build: at('stuck', LOOKS.dev, {
+      stuckOn: 2,
+      progress: 0.5,
+      patch: { stats: { energy: 55, mood: 40, sanity: 48 } },
+    }),
+  },
+  'mystery-tip': {
+    build: at('stuck', LOOKS.dev, { stuckOn: 2, progress: 0.5, patch: { stats: { energy: 55, mood: 40, sanity: 48 } } }),
+    ui: { tip: 'monitor' },
+  },
+  'react-kind': {
+    build: at('working', LOOKS.mei, {
+      extra: { bubble: { kind: 'say', text: 'Aww, you noticed! Best boss ever.', until: Date.now() + MIN } },
+    }),
+    ui: { effect: { type: 'react', tone: 'kind' }, effectAt: 0 },
+  },
+  'react-cruel': {
+    build: at('working', LOOKS.sam, {
+      extra: { bubble: { kind: 'say', text: 'Wow. Okay. I will just... keep typing then.', until: Date.now() + MIN } },
+    }),
+    ui: { effect: { type: 'react', tone: 'cruel' }, effectAt: 0 },
+  },
+  'react-cruel-bitter': {
+    build: at('working', LOOKS.rex, { patch: { attitude: 'bitter', stats: { energy: 60, mood: 30, sanity: 60 } } }),
+    ui: { effect: { type: 'react', tone: 'cruel' }, effectAt: 0 },
+  },
+  'react-neutral': {
+    build: at('working', LOOKS.gus, {
+      extra: { bubble: { kind: 'say', text: 'Fair point. Noted.', until: Date.now() + MIN } },
+    }),
+    ui: { effect: { type: 'react', tone: 'neutral' }, effectAt: SHOT_DELAY - 250 },
+  },
+  'monitor-tip': { build: at('working', LOOKS.priya), ui: { tip: 'monitor' } },
   hover: { build: at('working', LOOKS.priya), ui: { hover: true } },
+  'hover-low': {
+    build: at('working', LOOKS.rex, { patch: { stats: { energy: 15, mood: 22, sanity: 9 } } }),
+    ui: { hover: true },
+  },
   'hover-coffee': { build: at('coffee', LOOKS.mei, { since: 40_000 }), ui: { hover: true } },
   offline: { build: at('working', LOOKS.priya, { extra: { brainStatus: 'offline' } }), ui: { tip: 'offline' } },
   thinking: { build: at('working', LOOKS.dev, { extra: { brainStatus: 'thinking' } }) },
@@ -272,9 +349,21 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
         say('A BONUS?! You are the best boss!');
         return;
       case 'shock':
-        patchWorker({ stats: { ...w.stats, mood: Math.max(0, w.stats.mood - 10) }, boost: { multiplier: 1.8, until: Date.now() + 15_000 } });
+        // Shocks hurt but no longer speed them up; only shouting does.
+        patchWorker({ stats: { ...w.stats, mood: Math.max(0, w.stats.mood - 10) } });
         for (const cb of effectCbs) cb({ type: 'zap' });
+        say('OW!');
         return;
+      case 'sabotage': {
+        const p = current.project;
+        if (!p) return;
+        for (const cb of effectCbs) cb({ type: 'glitch' });
+        const index = p.hardParts.findIndex((h) => h.mystery);
+        push({ project: { ...p, stuckOn: index, stuckMinutesLeft: 10 } });
+        patchWorker({ activity: 'stuck', activitySince: Date.now() });
+        say("Wait, what? I didn't touch that!");
+        return;
+      }
       case 'fire':
         patchWorker({ activity: 'leaving', ending: 'fired', activitySince: Date.now() });
         return;
@@ -297,6 +386,13 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
       console.log('[mock] chat', text);
       push({ brainStatus: 'thinking' });
       window.setTimeout(() => {
+        // Crude tone guess so the reactions can be tried in a browser.
+        const tone = /thank|great|nice|love|good/i.test(text)
+          ? 'kind'
+          : /stupid|lazy|idiot|useless|hurry/i.test(text)
+            ? 'cruel'
+            : 'neutral';
+        for (const cb of effectCbs) cb({ type: 'react', tone });
         push({ brainStatus: 'ok' });
         say(CANNED_REPLIES[Math.floor(Math.random() * CANNED_REPLIES.length)] ?? 'Mm-hm.');
       }, 1800);
@@ -307,6 +403,7 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
     openOffice: (tab) => console.log('[mock] openOffice', tab ?? '(default)'),
     openPath: (path) => console.log('[mock] openPath', path),
     setInteractive: (on) => console.log('[mock] setInteractive', on),
+    focusWindow: () => console.log('[mock] focusWindow'),
     updateSettings: async () => undefined,
     testClaude: async () => ({ ok: true, message: 'mock' }),
   };

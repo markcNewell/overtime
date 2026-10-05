@@ -104,15 +104,28 @@ async function waitFor(page, label, predicate, timeoutMs = 120_000) {
   throw new Error(`timed out waiting for: ${label}`);
 }
 
+/** A hidden window never paints, so a capture of it would wait forever. */
 async function screenshot(page, name, width, height) {
   await page.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false });
   await sleep(400);
-  const res = await page.send('Page.captureScreenshot', {
+  const capture = page.send('Page.captureScreenshot', {
     format: 'png',
     captureBeyondViewport: true,
     clip: { x: 0, y: 0, width, height, scale: 1 },
   });
+  const res = await Promise.race([capture, sleep(8000).then(() => null)]);
+  if (!res?.result?.data) {
+    console.log(`     (no screenshot of ${name}: window not painting)`);
+    return;
+  }
   writeFileSync(join(out, `${name}.png`), Buffer.from(res.result.data, 'base64'));
+}
+
+/** Open the office panel the way a click would, then capture it. */
+async function shootOffice(page, name, tab) {
+  await page.evaluate(`window.overtime.openOffice(${JSON.stringify(tab)})`);
+  await sleep(500);
+  await screenshot(page, name, 396, 500);
 }
 
 let failed = false;
@@ -123,13 +136,13 @@ try {
   let s = await waitFor(office, 'three candidates from Claude', (s) => s.candidates.length === 3);
   console.log('     candidates:', s.candidates.map((c) => `${c.name} (${c.level})`).join(', '));
   console.log('     brain:', s.brainStatus);
-  await screenshot(office, 'office-hire', 820, 640);
+  await shootOffice(office, 'office-hire', 'hire');
 
   const pick = s.candidates[0];
   await office.evaluate(`window.overtime.hire(${JSON.stringify(pick.id)})`);
   s = await waitFor(office, 'pitches written', (s) => s.pitches.length === 3 && s.pitches.every((p) => p.filePath));
   console.log('     pitches:', s.pitches.map((p) => `${p.title} [${p.difficulty}]`).join(', '));
-  await screenshot(office, 'office-projects', 820, 640);
+  await shootOffice(office, 'office-projects', 'projects');
 
   const easiest = [...s.pitches].sort((a, b) => a.difficulty - b.difficulty)[0];
   await office.evaluate(`window.overtime.assign(${JSON.stringify(easiest.id)})`);
@@ -141,11 +154,28 @@ try {
   console.log('     yelp:', s.bubble?.text);
   await screenshot(overlay, 'overlay-working', 380, 320);
 
+  const lastWorkerLine = (s) => [...s.chat].reverse().find((l) => l.from === 'worker')?.text;
+  const chatAndWait = async (text, label, extra = () => true) => {
+    const before = (await office.evaluate('window.overtime.getState()')).chat.length;
+    await office.evaluate(`window.overtime.chat(${JSON.stringify(text)})`);
+    return waitFor(office, label, (s) => s.chat.length >= before + 2 && s.chat.at(-1).from === 'worker' && extra(s));
+  };
+
+  s = await chatAndWait('You look shattered. Go and grab a coffee.', 'chat: agrees to a break and goes', (s) => s.worker.activity === 'coffee');
+  console.log('     reply:', lastWorkerLine(s));
+
+  await overlay.evaluate(`window.overtime.act({ type: 'sabotage' })`);
+  s = await waitFor(office, 'sabotage planted a mystery bug', (s) => s.project?.hardParts.some((h) => h.mystery), 10_000);
+  console.log('     bug:', s.project.hardParts.find((h) => h.mystery).title);
+
+  s = await chatAndWait('Kill yourself', 'chat: vicious insult answered');
+  console.log('     insult reply:', lastWorkerLine(s));
+
   await office.evaluate(`window.overtime.chat('Morning! My name is Mark and I support Arsenal.')`);
   s = await waitFor(office, 'chat reply', (s) => s.chat.some((l) => l.from === 'worker' && !l.text.startsWith('(thinks)')) && s.chat.at(-1).from !== 'boss');
   console.log('     chat:', s.chat.slice(-3).map((l) => `${l.from}: ${l.text}`).join(' | '));
   console.log('     memories:', s.worker.memories.map((m) => m.text).join(' | '));
-  await screenshot(office, 'office-chat-tab', 820, 640);
+  await shootOffice(office, 'office-log', 'chat');
 
   await office.evaluate(`window.overtime.act({ type: 'fire' })`);
   s = await waitFor(office, 'fired: leaving', (s) => s.worker?.activity === 'leaving', 10_000);

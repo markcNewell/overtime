@@ -86,7 +86,19 @@ const ZOOMS = {
   'ending-lost-mind': [20, 160, 150, 145],
   'ending-rage-quit': [100, 170, 280, 135],
   'ending-fried-xray': [140, 190, 140, 115],
+  'mystery-stuck': [140, 165, 220, 140],
+  'react-kind': [140, 150, 150, 155],
+  'react-cruel': [120, 140, 170, 165],
+  'react-cruel-bitter': [140, 160, 140, 140],
+  glitch: [190, 180, 170, 110],
+  hover: [150, 150, 230, 150],
+  'chat-reply': [0, 120, 380, 170],
+  menu: [130, 110, 250, 160],
+  'menu-fire': [130, 110, 250, 160],
 };
+
+// New-feature states shot again over a loud wallpaper, to check legibility.
+const BUSY = ['menu', 'menu-fire', 'chat-reply', 'chat-coffee', 'glitch', 'mystery-stuck', 'react-kind', 'react-cruel', 'hover', 'monitor-tip'];
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -124,6 +136,14 @@ app.whenReady().then(async () => {
     fs.writeFileSync(path.join(OUT, name + '.png'), Buffer.from(r.data, 'base64'));
     console.log('wrote ' + name + '.png');
   }
+  async function typeText(text) {
+    await d.sendCommand('Input.insertText', { text });
+  }
+  async function pressEnter() {
+    const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+    await d.sendCommand('Input.dispatchKeyEvent', { type: 'keyDown', text: '\r', ...key });
+    await d.sendCommand('Input.dispatchKeyEvent', { type: 'keyUp', ...key });
+  }
   async function mouse(type, x, y) {
     await d.sendCommand('Input.dispatchMouseEvent', {
       type, x, y, button: type === 'mouseMoved' ? 'none' : 'left', clickCount: type === 'mouseMoved' ? 0 : 1,
@@ -142,6 +162,14 @@ app.whenReady().then(async () => {
     if (ZOOMS[name]) await shot(name + '@zoom', ZOOMS[name], 4);
   }
 
+  for (const name of BUSY) {
+    if (!wanted(name + '@busy')) continue;
+    current = name + '@busy';
+    await load({ mock: name, bg: 'busy' });
+    await sleep(850);
+    await shot(name + '@busy', [0, 0, 380, 320]);
+  }
+
   for (const sheet of meta.sheets) {
     const name = 'sheet-' + sheet;
     if (!wanted(name)) continue;
@@ -152,11 +180,21 @@ app.whenReady().then(async () => {
     await shot(name, [0, 0, 1100, Math.min(1600, h)], 1.5);
   }
 
-  // Real pointer events, to check hover, the menu and click-to-shock.
+  // Real pointer and keyboard events, to check hover, the menu, the desk
+  // chat, sabotage and click-to-shock. Step kinds: mouse events with x/y,
+  // ['wait', ms], ['type', text], ['enter'].
+  const click = (x, y) => [['mouseMoved', x, y], ['mousePressed', x, y], ['mouseReleased', x, y]];
+  const openMenu = [...click(354, 240), ['wait', 450]];
   const interactions = [
+    ['interact-fan-tip', 'working', [...openMenu, ['mouseMoved', 269, 181]], 250],
+    ['interact-fire-confirm', 'working', [...openMenu, ...click(305, 153)], 250],
+    ['interact-chat-waiting', 'working', [...openMenu, ...click(286, 239), ['wait', 200], ['type', 'Nice work on the ferns!'], ['enter']], 500],
+    ['interact-chat-reply', 'working', [...openMenu, ...click(286, 239), ['wait', 200], ['type', 'Nice work on the ferns!'], ['enter']], 2600],
+    ['interact-sabotage', 'working', [...click(300, 232)], 450],
+    ['interact-sabotage-after', 'working', [...click(300, 232)], 2400],
+    ['interact-monitor-tip', 'working', [['mouseMoved', 300, 232]], 300],
     ['interact-hover', 'working', [[ 'mouseMoved', 203, 250 ]], 700],
-    ['interact-menu', 'working', [[ 'mouseMoved', 354, 240 ], [ 'mousePressed', 354, 240 ], [ 'mouseReleased', 354, 240 ]], 300],
-    ['interact-fire', 'working', [[ 'mouseMoved', 354, 240 ], [ 'mousePressed', 354, 240 ], [ 'mouseReleased', 354, 240 ], ['wait', 200], [ 'mouseMoved', 261, 167 ], [ 'mousePressed', 261, 167 ], [ 'mouseReleased', 261, 167 ]], 300],
+    ['interact-menu', 'working', [...click(354, 240)], 400],
     ['interact-zap', 'working', [[ 'mouseMoved', 203, 250 ], [ 'mousePressed', 203, 250 ], [ 'mouseReleased', 203, 250 ]], 260],
     ['interact-tip', 'empty', [[ 'mouseMoved', 263, 256 ]], 300],
     ['interact-light-bg', 'bubble-say', [], 300],
@@ -168,6 +206,8 @@ app.whenReady().then(async () => {
     await sleep(700);
     for (const [type, x, y] of steps) {
       if (type === 'wait') await sleep(x);
+      else if (type === 'type') await typeText(x);
+      else if (type === 'enter') await pressEnter();
       else await mouse(type, x, y);
     }
     await sleep(wait);

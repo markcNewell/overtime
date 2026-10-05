@@ -208,6 +208,7 @@ export function installMockApi(): void {
     openOffice: () => undefined,
     openPath: () => undefined,
     setInteractive: () => undefined,
+    focusWindow: () => undefined,
     updateSettings: noop,
     testClaude: async () => ({ ok: true, message: 'Claude is ready.' }),
   };

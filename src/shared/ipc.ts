@@ -55,6 +55,11 @@ export interface OvertimeApi {
    * overlay calls this as the pointer enters or leaves them.
    */
   setInteractive(on: boolean): void;
+  /**
+   * Give this window the keyboard. The overlay is shown without activating,
+   * so a click into its chat box alone may not move focus on every OS.
+   */
+  focusWindow(): void;
   updateSettings(patch: Partial<Settings>): Promise<void>;
   testClaude(): Promise<ClaudeCheck>;
 }
@@ -71,6 +76,7 @@ export const CHANNELS = {
   openOffice: 'overtime:open-office',
   openPath: 'overtime:open-path',
   setInteractive: 'overtime:set-interactive',
+  focusWindow: 'overtime:focus-window',
   updateSettings: 'overtime:update-settings',
   testClaude: 'overtime:test-claude',
   officeTab: 'overtime:office-tab',

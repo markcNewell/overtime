@@ -8,7 +8,13 @@
  */
 
 import type { Effect } from '../../shared/ipc';
-import type { EndingKind, GameState, Leftover, Worker } from '../../shared/types';
+import type {
+  ChatTone,
+  EndingKind,
+  GameState,
+  Leftover,
+  Worker,
+} from '../../shared/types';
 import {
   personGroup,
   personHead,
@@ -23,9 +29,14 @@ import {
   xAt,
   type Live,
   type Plan,
+  type Segment,
 } from './director';
-import { confetti, levelUp, smoke, zapBolts } from './effects';
-import { FLOOR_Y, PROGRESS_W, sceneSvg } from './scene';
+import { confetti, levelUp, scuttle, smoke, zapBolts } from './effects';
+import { FLOOR_Y, PROGRESS_W, SCREEN_X, SCREEN_Y, sceneSvg } from './scene';
+
+/** How long a reaction to a chat reply shows on their face. */
+const REACT_MS = 4000;
+const GLITCH_MS = 1800;
 
 export interface Face {
   expression: Expression;
@@ -41,6 +52,20 @@ export interface HeadAnchor {
   y: number;
   facing: 1 | -1;
   visible: boolean;
+}
+
+/** True while they are stuck on a bug the boss planted. */
+export function isMysteryStuck(state: GameState | undefined): boolean {
+  const p = state?.project;
+  if (!p || p.stuckOn === undefined) return false;
+  return !!p.hardParts[p.stuckOn]?.mystery;
+}
+
+/** The face for a reaction to the boss's tone. */
+function reactionFace(tone: ChatTone, w: Worker): Expression {
+  if (tone === 'kind') return 'happy';
+  if (tone === 'neutral') return 'neutral';
+  return w.stats.mood < 35 || w.attitude === 'bitter' ? 'angry' : 'sad';
 }
 
 /** Pick a face from the stats; activity-specific faces win. */
@@ -95,6 +120,8 @@ export class SceneView {
   private readonly fxSweat: SVGGElement;
   private readonly fxZzz: SVGGElement;
   private readonly fxThinking: SVGGElement;
+  private readonly fxHeart: SVGGElement;
+  private readonly fxStorm: SVGGElement;
   private readonly effects: SVGGElement;
   private readonly effectsBack: SVGGElement;
   private readonly progress: SVGRectElement;
@@ -108,7 +135,11 @@ export class SceneView {
   private bodyKey = '';
   private xrayKey = '';
   private override?: { expression: Expression; until: number };
+  private reaction?: { tone: ChatTone; until: number };
   private readonly transient = new Set<string>();
+  private readonly sceneTransient = new Set<string>();
+  private awaiting = false;
+  private lastLocalGlitch = 0;
   private sceneCls = '';
   private workerCls = '';
   private tips = new Map<string, string>();
@@ -127,6 +158,8 @@ export class SceneView {
     this.fxSweat = q(this.svg, '.fx-sweat');
     this.fxZzz = q(this.svg, '.fx-zzz');
     this.fxThinking = q(this.svg, '.fx-thinking');
+    this.fxHeart = q(this.svg, '.fx-heart');
+    this.fxStorm = q(this.svg, '.fx-storm');
     this.effects = q(this.svg, '#effects');
     this.effectsBack = q(this.svg, '#effects-back');
     this.progress = q(this.svg, '#progress-fill');
@@ -162,6 +195,27 @@ export class SceneView {
     return !!this.worker && this.worker.activity !== 'leaving' && !this.live?.seg.hidden;
   }
 
+  /** There is code on the screen to break. */
+  get canSabotage(): boolean {
+    return this.clickable && !!this.state?.project && !!this.state.worker;
+  }
+
+  /**
+   * Extra room above the head while a storm cloud hangs there, so the reply
+   * bubble sits above the cloud instead of on it.
+   */
+  get bubbleLift(): number {
+    const r = this.reaction;
+    return r && r.tone === 'cruel' && r.until > Date.now() ? 28 : 0;
+  }
+
+  /** Show thinking dots while a chat reply is on its way. */
+  setAwaiting(on: boolean): void {
+    if (on === this.awaiting) return;
+    this.awaiting = on;
+    this.updateClasses(Date.now());
+  }
+
   /** Tooltip text for a `data-hit` key, set from the state. */
   tipFor(hit: string): string | undefined {
     return this.tips.get(hit);
@@ -176,8 +230,16 @@ export class SceneView {
     const h = personHead(live.seg.pose);
     const x = xAt(live) + live.seg.facing * h.x;
     const y = FLOOR_Y + h.y;
-    const extra = live.seg.hairOnEnd ? 20 : this.worker.look.hairStyle === 'mohawk' ? 13 : this.worker.look.hairStyle === 'bun' ? 9 : 4;
+    const extra = this.hairExtra(live.seg);
     return { x, y, top: y - h.r - extra, facing: live.seg.facing, visible: !live.seg.hidden };
+  }
+
+  /** How far the hair sticks up above the head, for placing things. */
+  private hairExtra(seg: Segment): number {
+    if (seg.hairOnEnd) return 20;
+    const style = this.worker?.look.hairStyle;
+    if (style === 'mohawk') return 13;
+    return style === 'bun' || style === 'curly' ? 9 : 4;
   }
 
   /** The pointer moved onto or off the worker. */
@@ -205,6 +267,14 @@ export class SceneView {
       case 'confetti':
         confetti(this.effects);
         return;
+      case 'glitch':
+        if (!local && now - this.lastLocalGlitch < 1500) return;
+        if (local) this.lastLocalGlitch = now;
+        this.glitch();
+        return;
+      case 'react':
+        this.react(e.tone, now);
+        return;
       case 'ending':
         this.startEnding(e.kind, now);
         return;
@@ -230,7 +300,7 @@ export class SceneView {
     const sameWorker = this.worker?.id === next.id;
     this.worker = next;
     const fromX = sameWorker && this.plan ? xAt(liveSegment(this.plan, now)) : undefined;
-    const plan = planFor(next, fromX, now);
+    const plan = planFor(next, fromX, now, isMysteryStuck(this.state));
     if (plan.key === this.plan?.key) return;
     // An ending started by an 'ending' effect keeps its own clock.
     if (this.plan && next.activity === 'leaving' && this.plan.key.startsWith(`${next.id}|leaving|${next.ending}|`)) return;
@@ -299,8 +369,12 @@ export class SceneView {
     const hx = f * h.x;
     this.fxSweat.setAttribute('transform', `translate(${hx.toFixed(1)} ${h.y.toFixed(1)})`);
     this.fxZzz.setAttribute('transform', `translate(${(hx + 12 * f).toFixed(1)} ${(h.y - 16).toFixed(1)})`);
+    const top = h.y - h.r - this.hairExtra(seg);
     const tx = f > 0 ? hx + 13 : hx - 35;
     this.fxThinking.setAttribute('transform', `translate(${tx.toFixed(1)} ${(h.y - h.r - 12).toFixed(1)})`);
+    // The heart floats by the face; the storm cloud hangs over the head.
+    this.fxHeart.setAttribute('transform', `translate(${(hx + 25 * f).toFixed(1)} ${(h.y - 8).toFixed(1)})`);
+    this.fxStorm.setAttribute('transform', `translate(${(hx - 2 * f).toFixed(1)} ${(top - 16).toFixed(1)})`);
     const seated = seg.pose.startsWith('sit');
     const [x, y, w, hh] = seated ? [-22, -88, 60, 90] : [-21, -98, 42, 100];
     this.hit.setAttribute('x', String(f > 0 ? x : -(x + w)));
@@ -315,13 +389,16 @@ export class SceneView {
     if (!w || !live) return;
     const seg = live.seg;
     const face = faceFor(w);
-    const ov = this.override && this.override.until > now ? this.override.expression : undefined;
+    const zapped = this.override && this.override.until > now ? this.override.expression : undefined;
+    const r = this.reaction && this.reaction.until > now ? this.reaction : undefined;
+    const reacted = r && w.activity !== 'asleep' ? reactionFace(r.tone, w) : undefined;
     const opts: PersonOptions = {
       pose: seg.pose,
-      expression: seg.expression ?? ov ?? face.expression,
+      expression: seg.expression ?? zapped ?? reacted ?? face.expression,
       crazed: !seg.expression && face.crazed,
       hairOnEnd: !!seg.hairOnEnd,
     };
+    if (reacted && r?.tone === 'kind' && !zapped && !seg.expression) opts.blush = true;
     if (seg.arms) opts.arms = seg.arms;
     const key = JSON.stringify([w.look, opts]);
     if (key !== this.bodyKey) {
@@ -355,11 +432,33 @@ export class SceneView {
     }
   }
 
-  private flash(cls: string, ms: number): void {
-    this.transient.add(cls);
+  /** Code goes red and jumbled and a bug runs across the screen. */
+  private glitch(): void {
+    if (!this.worker) return;
+    this.flash('glitching', GLITCH_MS, this.sceneTransient);
+    scuttle(
+      this.effects,
+      { x: SCREEN_X + 30, y: SCREEN_Y - 1 },
+      { x: SCREEN_X - 40, y: SCREEN_Y + 5 },
+    );
+  }
+
+  /** A few seconds of face (and a heart, a nod or a storm cloud). */
+  private react(tone: ChatTone, now: number): void {
+    const w = this.worker;
+    if (!w || w.activity === 'leaving' || w.activity === 'asleep') return;
+    this.reaction = { tone, until: now + REACT_MS };
+    for (const t of ['kind', 'neutral', 'cruel']) this.transient.delete(`react-${t}`);
+    this.flash(`react-${tone}`, REACT_MS);
+    this.drawBody(now);
+    window.setTimeout(() => this.drawBody(Date.now()), REACT_MS + 30);
+  }
+
+  private flash(cls: string, ms: number, set = this.transient): void {
+    set.add(cls);
     this.updateClasses(Date.now());
     window.setTimeout(() => {
-      this.transient.delete(cls);
+      set.delete(cls);
       this.updateClasses(Date.now());
     }, ms);
   }
@@ -381,7 +480,9 @@ export class SceneView {
     if (w?.boost && w.boost.until > now) c.push('boost');
     if (w && s?.project) c.push('has-project');
     if (w && !s?.project && (w.activity === 'idle' || w.activity === 'working')) c.push('needs-project');
-    if (s?.brainStatus === 'thinking') c.push('brain-thinking');
+    if (s?.brainStatus === 'thinking' || (this.awaiting && w)) c.push('brain-thinking');
+    if (w && isMysteryStuck(s)) c.push('mystery');
+    c.push(...this.sceneTransient);
     if (s?.brainStatus === 'offline') c.push('brain-offline');
     for (const l of s?.deskLeftovers ?? []) c.push(LEFTOVER_CLASS[l.kind]);
     if (seg?.sceneCls) c.push(seg.sceneCls);
@@ -407,13 +508,18 @@ export class SceneView {
     const p = state.project;
     const width = p ? (PROGRESS_W * Math.max(0, Math.min(1, p.progress))).toFixed(1) : '0';
     if (this.progress.getAttribute('width') !== width) this.progress.setAttribute('width', width);
-    if (!p) {
+    if (!p || !state.worker) {
       this.tips.delete('monitor');
       return;
     }
     const pct = Math.floor(p.progress * 100);
     const stuck = p.stuckOn !== undefined ? p.hardParts[p.stuckOn] : undefined;
-    this.tips.set('monitor', `${p.title}: ${pct}%${stuck ? ` (stuck on "${stuck.title}")` : ''}`);
+    const detail = stuck?.mystery
+      ? "Stuck on a bug they can't explain"
+      : stuck
+        ? `Stuck on "${stuck.title}"`
+        : `${p.title} · ${pct}%`;
+    this.tips.set('monitor', `Mess up their code\n${detail}`);
   }
 
   private updateLeftovers(state: GameState): void {

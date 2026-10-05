@@ -45,7 +45,9 @@ function applyMockUi(view: SceneView, ui: OverlayUi, m: MockUi): void {
     view.setPointerOver(true);
     ui.showCard();
   }
-  if (m.tip) ui.previewTip(m.tip);
+  const tip = m.tip;
+  // Menu buttons fan out over ~0.3 s; place the tooltip once they land.
+  if (tip) window.setTimeout(() => ui.previewTip(tip), m.menu ? 450 : 0);
   const effect = m.effect;
   if (effect) window.setTimeout(() => view.effect(effect, true), m.effectAt ?? 0);
 }
@@ -62,7 +64,10 @@ function main(): void {
     sheets: SHEETS,
   };
   const bg = params.get('bg');
-  if (bg) document.body.classList.add(bg === 'light' ? 'preview-bg-light' : 'preview-bg');
+  if (bg) {
+    const cls = bg === 'light' ? 'preview-bg-light' : bg === 'busy' ? 'preview-bg-busy' : 'preview-bg';
+    document.body.classList.add(cls);
+  }
   const sheet = params.get('sheet');
   if (sheet) {
     renderSheet(sheet, stageEl());

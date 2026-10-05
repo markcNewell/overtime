@@ -75,12 +75,15 @@ function walk(from: number, to: number, extra: Partial<Segment> = {}): Segment {
   };
 }
 
-function seatedHold(activity: Activity): Segment {
+function seatedHold(activity: Activity, mystery = false): Segment {
   switch (activity) {
     case 'working':
       return hold('sit-type', SEAT_X);
     case 'stuck':
-      return hold('sit-type', SEAT_X, { arms: 'scratch' });
+      // A planted bug is worse than an honest hard part: both hands on head.
+      return mystery
+        ? hold('sit-type', SEAT_X, { arms: 'clutch', cls: 'seg-frazzled' })
+        : hold('sit-type', SEAT_X, { arms: 'scratch' });
     case 'asleep':
       return hold('sit-slump', SEAT_X);
     default:
@@ -194,11 +197,17 @@ function endingPlan(kind: EndingKind, x0: number, seated: boolean): Segment[] {
 /**
  * Build the timeline for the worker's current activity. `fromX` is where
  * the worker is drawn right now, so a change of activity walks them from
- * there instead of teleporting.
+ * there instead of teleporting. `mystery` is set while they are stuck on a
+ * bug the boss planted.
  */
-export function planFor(worker: Worker, fromX: number | undefined, now: number): Plan {
+export function planFor(
+  worker: Worker,
+  fromX: number | undefined,
+  now: number,
+  mystery = false,
+): Plan {
   const a = worker.activity;
-  const key = `${worker.id}|${a}|${worker.ending ?? ''}|${worker.activitySince}`;
+  const key = `${worker.id}|${a}|${worker.ending ?? ''}|${worker.activitySince}|${mystery ? 'm' : ''}`;
   const since = worker.activitySince;
   const atSeat = fromX === undefined || Math.abs(fromX - SEAT_X) < 2;
 
@@ -228,8 +237,9 @@ export function planFor(worker: Worker, fromX: number | undefined, now: number):
     };
   }
   if (SEATED.includes(a)) {
-    if (atSeat) return { key, start: since, segments: [seatedHold(a)] };
-    return { key, start: now, segments: [walk(fromX, SEAT_X), seatedHold(a)] };
+    const seated = seatedHold(a, mystery);
+    if (atSeat) return { key, start: since, segments: [seated] };
+    return { key, start: now, segments: [walk(fromX, SEAT_X), seated] };
   }
   return { key, start: since, segments: [seatedHold('idle')] };
 }

@@ -5,6 +5,7 @@
  */
 
 import { num, type Pt } from '../shared/svg';
+import { bugMarkup } from './scene';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const LINE = '#2a2238';
@@ -121,4 +122,20 @@ export function confetti(layer: SVGGElement): void {
       `</g>`;
   }
   spawn(layer, bits, 4000);
+}
+
+/**
+ * A bug scuttles across the monitor and drops off its left edge. `from` is
+ * the screen's right edge, `to` its left; the monitor is angled, so the
+ * path tilts a little.
+ */
+export function scuttle(layer: SVGGElement, from: Pt, to: Pt): void {
+  const style = `--dx:${num(to.x - from.x)}px;--dy:${num(to.y - from.y)}px`;
+  spawn(
+    layer,
+    `<g transform="translate(${num(from.x)} ${num(from.y)})">` +
+      `<g class="fx-scuttle" style="${style}"><g transform="scale(-1 1)">${bugMarkup()}</g></g>` +
+      `</g>`,
+    1900,
+  );
 }

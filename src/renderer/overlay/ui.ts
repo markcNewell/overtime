@@ -1,6 +1,7 @@
 /**
- * The HTML layer over the scene: speech bubble, hover card, boss menu, chat
- * field and tooltips, plus pointer tracking for click-through.
+ * The HTML layer over the scene: speech bubble, hover card, the boss menu
+ * fanned out around the clipboard, the desk chat box and tooltips, plus
+ * pointer tracking for click-through.
  *
  * The window ignores the mouse except over elements marked `data-hit`; this
  * module watches which one the pointer is over and tells the main process
@@ -8,13 +9,20 @@
  */
 
 import type { DirectAction, OfficeTab, OvertimeApi } from '../../shared/ipc';
-import type { Attitude, GameState, Level, Worker } from '../../shared/types';
-import { personSvg } from '../shared/person';
+import type { GameState, Level } from '../../shared/types';
 import { esc } from '../shared/svg';
 import { SCENE_W } from './scene';
 import type { SceneView } from './view';
 
-type MenuAction = 'chat' | 'coffee' | 'praise' | 'shout' | 'bonus' | 'fire' | 'office';
+type MenuAction =
+  | 'chat'
+  | 'coffee'
+  | 'praise'
+  | 'bonus'
+  | 'shout'
+  | 'sabotage'
+  | 'fire'
+  | 'office';
 
 const LEVEL_NAME: Record<Level, string> = {
   junior: 'Junior',
@@ -23,36 +31,72 @@ const LEVEL_NAME: Record<Level, string> = {
   lead: 'Lead',
 };
 
-const ATTITUDE_NAME: Record<Attitude, string> = {
-  neutral: 'Neutral',
-  loyal: 'Loyal',
-  scared: 'Scared of you',
-  bitter: 'Bitter',
-  'sucking-up': 'Sucking up',
-};
-
 const ICON_PATHS: Record<MenuAction, string> = {
   chat: '<path d="M4 5h16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-8l-5 4v-4H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z" fill="#fff"/><circle cx="8" cy="11" r="1.4" fill="#2a2238" stroke="none"/><circle cx="12" cy="11" r="1.4" fill="#2a2238" stroke="none"/><circle cx="16" cy="11" r="1.4" fill="#2a2238" stroke="none"/>',
   coffee: '<path d="M4 9h12v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" fill="#fff"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16" fill="none"/><path d="M8 3c-1 1.5 1 2.5 0 4M12 3c-1 1.5 1 2.5 0 4" fill="none"/>',
   praise: '<path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="#fff"/>',
+  bonus: '<rect x="2.5" y="6" width="19" height="12" rx="2" fill="#fff"/><circle cx="12" cy="12" r="3" fill="none"/>',
   shout: '<path d="M3 10v4h3l7 5V5L6 10z" fill="#fff"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none"/>',
-  bonus: '<rect x="2.5" y="6" width="19" height="12" rx="2" fill="#fff"/><circle cx="12" cy="12" r="3" fill="none"/><path d="M5.5 9v0M18.5 15v0" fill="none"/>',
+  sabotage: '<path d="M8 9.5 4.5 7.5M16 9.5l3.5-2M7 13H3.5M17 13h3.5M7.5 17 4.5 19M16.5 17l3 2" fill="none"/><ellipse cx="12" cy="14.5" rx="5" ry="6" fill="#fff"/><circle cx="12" cy="7.2" r="2.6" fill="#fff"/><path d="M12 9v11.5" fill="none"/>',
   fire: '<path d="M5 3h9v18H5z" fill="#fff"/><circle cx="11.5" cy="12" r="0.9" fill="#2a2238" stroke="none"/><path d="M15.5 12h6M19 9l3 3-3 3" fill="none"/>',
   office: '<path d="M4 21V5l8-2v18M12 8h8v13" fill="#fff"/><path d="M7 8h2M7 12h2M7 16h2M15 12h2M15 16h2M2 21h20" fill="none"/>',
 };
 
-const MENU: Array<{ action: MenuAction; label: string; colour: string }> = [
-  { action: 'chat', label: 'Chat', colour: '#8fc1ff' },
-  { action: 'coffee', label: 'Coffee', colour: '#e3b98d' },
-  { action: 'praise', label: 'Praise', colour: '#ffe27a' },
-  { action: 'shout', label: 'Shout', colour: '#ffb067' },
-  { action: 'bonus', label: 'Bonus', colour: '#9be8a6' },
-  { action: 'fire', label: 'Fire', colour: '#ff9a9a' },
-  { action: 'office', label: 'Office', colour: '#cdbdf5' },
+interface FanItem {
+  action: MenuAction;
+  label: string;
+  colour: string;
+  /** Ring radius and angle (degrees, 0 = right, 90 = up) around the clipboard. */
+  r: number;
+  deg: number;
+}
+
+/** Where the fan opens from: the middle of the clipboard. */
+const FAN_ORIGIN = { x: 349, y: 246 };
+const BUTTON = 30;
+
+// Two short arcs: the inner ring holds the everyday actions, the outer one
+// the drastic ones, so Fire is never the button nearest the pointer.
+const FAN: FanItem[] = [
+  { action: 'chat', label: 'Chat', colour: '#8fc1ff', r: 66, deg: 176 },
+  { action: 'coffee', label: 'Send for coffee', colour: '#e8c39b', r: 66, deg: 146 },
+  { action: 'praise', label: 'Praise', colour: '#ffe27a', r: 66, deg: 116 },
+  { action: 'bonus', label: 'Give a bonus', colour: '#9be8a6', r: 66, deg: 86 },
+  { action: 'shout', label: 'Shout at them', colour: '#ffb067', r: 104, deg: 170 },
+  { action: 'sabotage', label: 'Mess up their code', colour: '#d6f27a', r: 104, deg: 143 },
+  { action: 'fire', label: 'Fire', colour: '#ff8f8f', r: 104, deg: 116 },
+  { action: 'office', label: 'Staff file', colour: '#cdbdf5', r: 104, deg: 89 },
 ];
 
+/** The two curved rails behind the rings, so the fan reads as one menu. */
+const RAILS = [
+  { r: 66, from: 86, to: 176 },
+  { r: 104, from: 89, to: 170 },
+];
+
+/** Close the desk chat after this long without typing or a reply. */
+const CHAT_IDLE_MS = 60_000;
+/** Give up waiting for a reply after this long. */
+const REPLY_TIMEOUT_MS = 45_000;
+
+function fanPoint(item: FanItem): { x: number; y: number } {
+  const a = (item.deg * Math.PI) / 180;
+  return { x: FAN_ORIGIN.x + item.r * Math.cos(a), y: FAN_ORIGIN.y - item.r * Math.sin(a) };
+}
+
+function railPaths(): string {
+  const p = (r: number, deg: number): string => {
+    const a = (deg * Math.PI) / 180;
+    return `${(FAN_ORIGIN.x + r * Math.cos(a)).toFixed(1)},${(FAN_ORIGIN.y - r * Math.sin(a)).toFixed(1)}`;
+  };
+  return RAILS.map(({ r, from, to }) => {
+    const d = `M${p(r, from)} A${r},${r} 0 0 0 ${p(r, to)}`;
+    return `<path class="rail-edge" d="${d}"/><path class="rail" d="${d}"/>`;
+  }).join('');
+}
+
 function icon(action: MenuAction): string {
-  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#2a2238" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[action]}</svg>`;
+  return `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#2a2238" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[action]}</svg>`;
 }
 
 function today(): string {
@@ -61,32 +105,15 @@ function today(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function statusLine(w: Worker, state: GameState): string {
-  const p = state.project;
-  switch (w.activity) {
-    case 'arriving':
-      return 'Just arriving';
-    case 'idle':
-      return p ? 'Slacking off' : 'Waiting for a project';
-    case 'working':
-      return p ? `Building ${p.title}` : 'Working';
-    case 'stuck': {
-      const hp = p && p.stuckOn !== undefined ? p.hardParts[p.stuckOn] : undefined;
-      return hp ? `Stuck: ${hp.title}` : 'Stuck';
-    }
-    case 'coffee':
-      return 'On a coffee break';
-    case 'asleep':
-      return 'Asleep at the desk';
-    case 'leaving':
-      return 'Leaving. For good.';
-  }
-}
-
 function el<T extends HTMLElement>(html: string): T {
   const t = document.createElement('template');
   t.innerHTML = html.trim();
   return t.content.firstElementChild as T;
+}
+
+function bubbleKey(state: GameState | undefined): string {
+  const b = state?.bubble;
+  return b ? `${b.kind}|${b.text}|${b.until}` : '';
 }
 
 export class OverlayUi {
@@ -94,25 +121,29 @@ export class OverlayUi {
   private readonly bubbleText: HTMLDivElement;
   private readonly card: HTMLDivElement;
   private readonly menu: HTMLDivElement;
+  private readonly confirm: HTMLDivElement;
   private readonly chat: HTMLFormElement;
   private readonly chatInput: HTMLInputElement;
   private readonly tip: HTMLDivElement;
 
   private state?: GameState;
   private hitEl: Element | null = null;
+  private tipEl: Element | null = null;
   private interactive = false;
   private menuOpen = false;
   private confirming = false;
   private chatOpen = false;
-  private chatFocused = false;
+  private chatIdleTimer = 0;
+  private awaitingSince = 0;
+  private bubbleAtSend = '';
   private cardOpen = false;
   private cardTimer = 0;
   private bubbleShown = '';
   private bubbleTimer = 0;
   private followFrame = 0;
-  private portraitKey = '';
-  private lastHead = { x: NaN, top: NaN };
+  private lastHead = { x: NaN, top: NaN, lift: 0 };
   private bubbleSize = { w: 0, h: 0 };
+  private chatSide = '';
 
   constructor(
     private readonly api: OvertimeApi,
@@ -123,59 +154,77 @@ export class OverlayUi {
     this.bubbleText = this.bubble.querySelector('.bubble-text') as HTMLDivElement;
     this.card = el(`<div class="card" hidden></div>`);
     this.menu = el(this.menuMarkup());
+    this.confirm = this.menu.querySelector('.fan-confirm') as HTMLDivElement;
     this.chat = el(
-      `<form class="chat" data-hit="chat" hidden autocomplete="off">` +
-        `<input class="chat-input" type="text" maxlength="400" spellcheck="true" aria-label="Message">` +
-        `<button class="chat-send" type="submit" aria-label="Send"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M3 11.5L21 3l-6.5 18-3-7.5z" fill="#fff" stroke="#2a2238" stroke-width="1.8" stroke-linejoin="round"/></svg></button>` +
-        `<div class="chat-hint">Enter to send · Esc to close</div>` +
-        `</form>`,
+      `<form class="desk-chat" data-hit="chat" hidden autocomplete="off">` +
+        `<input class="chat-input" type="text" maxlength="400" spellcheck="true" aria-label="Say something">` +
+        `<button class="chat-x" type="button" data-tip="Close (Esc)" aria-label="Close chat">` +
+        `<svg viewBox="0 0 12 12" width="9" height="9" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="#2a2238" stroke-width="2" stroke-linecap="round"/></svg>` +
+        `</button></form>`,
     );
     this.chatInput = this.chat.querySelector('input') as HTMLInputElement;
     this.tip = el(`<div class="tip" hidden></div>`);
-    stage.append(this.bubble, this.card, this.menu, this.chat, this.tip);
+    stage.append(this.bubble, this.card, this.chat, this.menu, this.tip);
     this.bind();
-    view.onSegment = () => this.updateBubble();
+    view.onSegment = () => {
+      this.updateBubble();
+      if (this.chatOpen) this.positionChat();
+    };
   }
 
   /** Apply a new game state to the HTML layer. */
   update(state: GameState): void {
+    const previous = this.state;
     this.state = state;
+    if (this.awaitingSince && bubbleKey(state) !== this.bubbleAtSend && state.bubble) {
+      // The reply is in: stop the dots and give them another minute to talk.
+      this.stopAwaiting();
+      this.touchChat();
+    }
+    if (previous?.brainStatus === 'thinking' && state.brainStatus !== 'thinking' && this.awaitingSince) {
+      if (!state.bubble) this.stopAwaiting();
+    }
     this.updateBubble();
     if (this.cardOpen) this.fillCard();
     if (this.menuOpen) this.refreshMenu();
-    if (!this.view.shownWorker && this.chatOpen) this.closeChat();
+    if (this.chatOpen && !this.view.clickable) this.closeChat();
   }
 
   // ---------------------------------------------------------- pointer
 
   private bind(): void {
     document.addEventListener('mousemove', (e) => this.onMove(e.clientX, e.clientY));
-    document.documentElement.addEventListener('mouseleave', () => this.setHit(null));
+    document.documentElement.addEventListener('mouseleave', () => {
+      this.setHit(null);
+      this.setTip(null);
+    });
     document.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (this.chatOpen) this.closeChat();
+      if (this.confirming) this.cancelFire();
       else if (this.menuOpen) this.closeMenu();
+      else if (this.chatOpen) this.closeChat();
     });
     this.chat.addEventListener('submit', (e) => {
       e.preventDefault();
-      const text = this.chatInput.value.trim();
-      if (text) void this.api.chat(text);
-      this.closeChat();
+      this.sendChat();
     });
-    this.chatInput.addEventListener('focus', () => {
-      this.chatFocused = true;
-      this.syncInteractive();
+    // A click on the box must really take the keyboard: the overlay is shown
+    // without activating, so ask for focus explicitly on every press.
+    this.chat.addEventListener('mousedown', (e) => {
+      this.api.focusWindow();
+      if (!(e.target instanceof Element && e.target.closest('.chat-x'))) {
+        window.setTimeout(() => this.chatInput.focus(), 0);
+      }
     });
-    this.chatInput.addEventListener('blur', () => {
-      this.chatFocused = false;
-      this.syncInteractive();
-    });
+    this.chatInput.addEventListener('input', () => this.touchChat());
+    this.chatInput.addEventListener('focus', () => this.touchChat());
   }
 
   private onMove(x: number, y: number): void {
     const target = document.elementFromPoint(x, y);
     this.setHit(target?.closest('[data-hit]') ?? null);
+    this.setTip(target?.closest('[data-tip], [data-hit]') ?? null);
   }
 
   private setHit(next: Element | null): void {
@@ -186,12 +235,11 @@ export class OverlayUi {
     const key = next?.getAttribute('data-hit') ?? '';
     this.view.setPointerOver(key === 'worker');
     this.onHoverWorker(key === 'worker');
-    this.showTip(next, key);
     this.syncInteractive();
   }
 
   private syncInteractive(): void {
-    const on = this.hitEl !== null || this.menuOpen || this.chatFocused;
+    const on = this.hitEl !== null || this.menuOpen || this.chatOpen;
     if (on === this.interactive) return;
     this.interactive = on;
     this.api.setInteractive(on);
@@ -202,12 +250,17 @@ export class OverlayUi {
     // Chromium can report the click on the <svg> root instead of the part.
     const under = document.elementFromPoint(e.clientX, e.clientY);
     const target = under ?? (e.target instanceof Element ? e.target : null);
-    const inMenu = target?.closest('.menu');
-    if (inMenu) {
+    // Whatever was clicked, its tooltip has done its job; it returns when the
+    // pointer moves onto something else.
+    if (!target?.closest('.fan')) this.tip.hidden = true;
+    if (target?.closest('.fan')) {
       this.onMenuClick(target);
       return;
     }
-    if (target?.closest('.chat')) return;
+    if (target?.closest('.desk-chat')) {
+      if (target.closest('.chat-x')) this.closeChat();
+      return;
+    }
     const hit = target?.closest('[data-hit]')?.getAttribute('data-hit');
     if (this.menuOpen && hit !== 'clipboard') this.closeMenu();
     switch (hit) {
@@ -228,7 +281,7 @@ export class OverlayUi {
         this.office('settings');
         return;
       case 'monitor':
-        if (this.state?.project) this.office('projects');
+        this.sabotage();
         return;
     }
   }
@@ -246,31 +299,63 @@ export class OverlayUi {
     void this.api.act({ type: 'shock' });
   }
 
+  private sabotage(): void {
+    if (!this.view.canSabotage) return;
+    this.view.effect({ type: 'glitch' }, true);
+    void this.api.act({ type: 'sabotage' });
+  }
+
   // ------------------------------------------------------------- tips
 
-  private showTip(target: Element | null, key: string): void {
-    const text = key ? (this.view.tipFor(key) ?? target?.getAttribute('data-tip') ?? '') : '';
-    if (!text || this.menuOpen || key === 'worker') {
+  private tipText(target: Element | null): string {
+    if (!target) return '';
+    const own = target.closest('[data-tip]')?.getAttribute('data-tip');
+    if (own) return own;
+    const key = target.closest('[data-hit]')?.getAttribute('data-hit') ?? '';
+    return key ? (this.view.tipFor(key) ?? '') : '';
+  }
+
+  private setTip(target: Element | null, force = false): void {
+    const anchor = target?.closest('[data-tip]') ?? target;
+    if (!force && anchor === this.tipEl) return;
+    this.tipEl = anchor;
+    const text = this.tipText(anchor);
+    const key = anchor?.getAttribute('data-hit');
+    if (!anchor || !text || key === 'worker' || (this.menuOpen && !anchor.closest('.fan'))) {
       this.tip.hidden = true;
       return;
     }
     this.tip.textContent = text;
     this.tip.hidden = false;
-    const box = target?.getBoundingClientRect();
+    const box = anchor.getBoundingClientRect();
     const stageBox = this.stage.getBoundingClientRect();
-    if (!box) return;
     const w = this.tip.offsetWidth;
     const h = this.tip.offsetHeight;
-    const cx = box.left + box.width / 2 - stageBox.left;
-    const left = Math.max(4, Math.min(SCENE_W - w - 4, cx - w / 2));
-    const top = Math.max(4, box.top - stageBox.top - h - 6);
+    let left: number;
+    let top: number;
+    if (anchor.classList.contains('fan-btn')) {
+      // Menu labels hang off the clipboard, below the fan, where they can't
+      // cover a neighbouring button.
+      left = SCENE_W - 6 - w;
+      top = 268;
+    } else {
+      const cx = box.left + box.width / 2 - stageBox.left;
+      left = cx - w / 2;
+      top = box.top - stageBox.top - h - 6;
+      if (top < 4) top = box.bottom - stageBox.top + 6;
+    }
+    left = Math.max(4, Math.min(SCENE_W - w - 4, left));
     this.tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
   }
 
-  /** Show a tooltip for a `data-hit` key without the pointer (previews). */
+  /**
+   * Show a tooltip without the pointer (previews): a `data-hit` key, or
+   * `act:<action>` for a menu button.
+   */
   previewTip(key: string): void {
-    const target = this.stage.querySelector(`[data-hit="${key}"]`);
-    if (target) this.showTip(target, key);
+    const sel = key.startsWith('act:') ? `.fan [data-act="${key.slice(4)}"]` : `[data-hit="${key}"]`;
+    const target = this.stage.querySelector(sel);
+    if (target) this.setTip(target, true);
   }
 
   // ------------------------------------------------------------- card
@@ -284,7 +369,7 @@ export class OverlayUi {
     }
   }
 
-  /** Open the hover card next to the worker. */
+  /** Open the small stats card beside the worker. */
   showCard(): void {
     if (!this.view.shownWorker) return;
     this.cardOpen = true;
@@ -293,9 +378,13 @@ export class OverlayUi {
     const h = this.view.head();
     const w = this.card.offsetWidth;
     const ht = this.card.offsetHeight;
-    const left = h.x > SCENE_W / 2 ? h.x - w - 26 : h.x + 26;
-    const top = Math.max(4, Math.min(300 - ht, h.y - ht / 2 - 10));
-    this.card.style.transform = `translate(${Math.round(Math.max(4, left))}px, ${Math.round(top)}px)`;
+    // Keep clear of the chat box, which sits on the roomier side.
+    let right = h.x > SCENE_W / 2;
+    if (this.chatOpen) right = this.chatSide === 'left';
+    const left = right ? h.x + 24 : h.x - w - 24;
+    const top = Math.max(4, Math.min(296 - ht, h.y - ht + 6));
+    const x = Math.max(4, Math.min(SCENE_W - w - 4, left));
+    this.card.style.transform = `translate(${Math.round(x)}px, ${Math.round(top)}px)`;
   }
 
   private hideCard(): void {
@@ -307,58 +396,49 @@ export class OverlayUi {
     const w = this.view.shownWorker;
     const s = this.state;
     if (!w || !s) return;
-    const bar = (label: string, value: number, cls: string): string =>
-      `<div class="bar ${cls}${value < 25 ? ' low' : ''}"><span class="bar-label">${label}</span>` +
-      `<span class="bar-track"><span class="bar-fill" style="width:${Math.round(Math.max(0, Math.min(100, value)))}%"></span></span>` +
-      `<span class="bar-val">${Math.round(value)}</span></div>`;
+    const bar = (label: string, value: number, cls: string): string => {
+      const v = Math.round(Math.max(0, Math.min(100, value)));
+      return (
+        `<div class="bar ${cls}${v < 25 ? ' low' : ''}"><span class="bar-label">${label}</span>` +
+        `<span class="bar-track"><span class="bar-fill" style="width:${v}%"></span></span></div>`
+      );
+    };
     const p = s.project;
-    const project = p
-      ? `<div class="card-project"><span class="card-project-title">${esc(p.title)}</span><span class="card-project-pct">${Math.floor(p.progress * 100)}%</span></div>` +
-        `<div class="card-progress"><span style="width:${Math.round(p.progress * 100)}%"></span></div>`
-      : '';
-    const portraitKey = JSON.stringify(w.look);
-    const head =
-      `<div class="card-head"><div class="card-portrait"></div><div class="card-id">` +
-      `<div class="card-name">${esc(w.name)}</div>` +
-      `<div class="card-meta">${LEVEL_NAME[w.level]} · ${ATTITUDE_NAME[w.attitude]}</div></div></div>`;
-    // The portrait is the only costly part; keep it across refreshes.
-    const portrait = this.card.querySelector('.card-portrait')?.innerHTML;
     this.card.innerHTML =
-      head +
-      `<div class="card-status">${esc(statusLine(w, s))}</div>` +
+      `<div class="card-name">${esc(w.name)}</div>` +
+      `<div class="card-meta">${LEVEL_NAME[w.level]}${p ? ` · <b>${Math.floor(p.progress * 100)}%</b> done` : ''}</div>` +
       bar('Energy', w.stats.energy, 'energy') +
       bar('Mood', w.stats.mood, 'mood') +
-      bar('Sanity', w.stats.sanity, 'sanity') +
-      project;
-    const slot = this.card.querySelector('.card-portrait');
-    if (!slot) return;
-    if (portrait && portraitKey === this.portraitKey) slot.innerHTML = portrait;
-    else {
-      slot.innerHTML = personSvg(w.look, { pose: 'stand', expression: 'neutral', crop: 'bust', size: 34 });
-      this.portraitKey = portraitKey;
-    }
+      bar('Sanity', w.stats.sanity, 'sanity');
   }
 
   // ------------------------------------------------------------- menu
 
   private menuMarkup(): string {
-    const items = MENU.map(
-      (m) =>
-        `<button class="item" type="button" data-act="${m.action}" style="--c:${m.colour}">${icon(m.action)}<span class="item-label">${m.label}</span><span class="item-note"></span></button>`,
-    ).join('');
+    const items = FAN.map((m, i) => {
+      const { x, y } = fanPoint(m);
+      const style = [
+        `left:${(x - BUTTON / 2).toFixed(1)}px`,
+        `top:${(y - BUTTON / 2).toFixed(1)}px`,
+        `--c:${m.colour}`,
+        `--fx:${(FAN_ORIGIN.x - x).toFixed(1)}px`,
+        `--fy:${(FAN_ORIGIN.y - y).toFixed(1)}px`,
+        `animation-delay:${i * 22}ms`,
+      ].join(';');
+      return `<button class="fan-btn" type="button" data-act="${m.action}" data-tip="${esc(m.label)}" aria-label="${esc(m.label)}" style="${style}">${icon(m.action)}</button>`;
+    }).join('');
     return (
-      `<div class="menu" data-hit="menu" hidden role="menu">` +
-      `<div class="menu-head"><span class="menu-title">Boss menu</span><span class="menu-who"></span>` +
-      `<button class="menu-x" type="button" data-act="close" aria-label="Close">✕</button></div>` +
-      `<div class="menu-grid">${items}</div>` +
-      `<div class="menu-confirm" hidden><div class="confirm-q"></div>` +
-      `<div class="confirm-row"><button class="confirm-yes" type="button" data-act="fire-yes">Yes, fire</button>` +
-      `<button class="confirm-no" type="button" data-act="fire-no">No</button></div></div>` +
+      `<div class="fan" data-hit="menu" hidden role="menu">` +
+      `<svg class="fan-tray" width="${SCENE_W}" height="320" aria-hidden="true">${railPaths()}</svg>` +
+      items +
+      `<div class="fan-confirm" hidden><span class="confirm-q"></span>` +
+      `<button class="confirm-yes" type="button" data-act="fire-yes">Fire</button>` +
+      `<button class="confirm-no" type="button" data-act="fire-no">Keep</button></div>` +
       `</div>`
     );
   }
 
-  /** Open the boss menu above the clipboard. */
+  /** Fan the boss actions out around the clipboard. */
   openMenu(): void {
     this.menuOpen = true;
     this.confirming = false;
@@ -366,6 +446,7 @@ export class OverlayUi {
     this.tip.hidden = true;
     this.refreshMenu();
     this.menu.hidden = false;
+    this.bubble.classList.add('muted');
     this.syncInteractive();
   }
 
@@ -373,6 +454,9 @@ export class OverlayUi {
     this.menuOpen = false;
     this.confirming = false;
     this.menu.hidden = true;
+    this.tip.hidden = true;
+    this.tipEl = null;
+    this.bubble.classList.remove('muted');
     this.syncInteractive();
   }
 
@@ -380,54 +464,64 @@ export class OverlayUi {
     const w = this.view.shownWorker;
     const s = this.state;
     const present = !!w && w.activity !== 'leaving' && w.activity !== 'arriving';
-    const who = this.menu.querySelector('.menu-who');
-    if (who) who.textContent = w ? w.name : 'nobody hired';
-    const bonusUsed = w?.lastBonusDay === today();
-    for (const b of this.menu.querySelectorAll<HTMLButtonElement>('button.item')) {
+    const name = w?.name.split(' ')[0] ?? 'them';
+    for (const b of this.menu.querySelectorAll<HTMLButtonElement>('.fan-btn')) {
       const action = b.dataset.act as MenuAction;
+      const item = FAN.find((f) => f.action === action);
       let ok = action === 'office' || present;
-      let note = '';
+      let tip = item?.label ?? action;
       if (action === 'coffee' && w?.activity === 'coffee') {
         ok = false;
-        note = 'on it';
+        tip = 'Already on a break';
       }
-      if (action === 'bonus' && bonusUsed) {
+      if (action === 'bonus' && w?.lastBonusDay === today()) {
         ok = false;
-        note = 'tomorrow';
+        tip = 'Bonus (one a day, back tomorrow)';
       }
-      if (action === 'chat' && s?.brainStatus === 'offline' && present) note = 'offline';
+      if (action === 'sabotage' && !s?.project) {
+        ok = false;
+        tip = 'No code to mess up';
+      }
+      if (action === 'chat' && present && s?.brainStatus === 'offline') tip = 'Chat (Claude is offline: canned replies)';
+      if (action === 'fire' && present) tip = `Fire ${name}`;
+      if (!present && action !== 'office') tip = 'Nobody to boss around';
       b.disabled = !ok;
-      const n = b.querySelector('.item-note');
-      if (n) n.textContent = note;
+      b.dataset.tip = tip;
+      b.classList.toggle('dim', this.confirming && action !== 'fire');
     }
-    const grid = this.menu.querySelector<HTMLElement>('.menu-grid');
-    const confirm = this.menu.querySelector<HTMLElement>('.menu-confirm');
-    if (grid) grid.hidden = this.confirming;
-    if (confirm) confirm.hidden = !this.confirming;
-    const q2 = this.menu.querySelector('.confirm-q');
-    if (q2) q2.textContent = `Really fire ${w?.name ?? 'them'}?`;
+    this.confirm.hidden = !this.confirming;
+    const q = this.confirm.querySelector('.confirm-q');
+    if (q) q.textContent = `Fire ${name}?`;
   }
 
-  /** Show the "Really fire?" question (also used by previews). */
+  /** Ask "Fire them?" next to the Fire button (also used by previews). */
   askFire(): void {
     this.confirming = true;
+    this.tip.hidden = true;
+    this.refreshMenu();
+  }
+
+  private cancelFire(): void {
+    this.confirming = false;
     this.refreshMenu();
   }
 
   private onMenuClick(target: Element | null): void {
-    const act = target?.closest('button')?.getAttribute('data-act');
-    if (!act) return;
-    if (target?.closest('button')?.hasAttribute('disabled')) return;
+    const button = target?.closest('button');
+    const act = button?.getAttribute('data-act');
+    if (!act) {
+      // A click on the fan's empty space closes it.
+      this.closeMenu();
+      return;
+    }
+    if (button?.hasAttribute('disabled')) return;
     switch (act) {
-      case 'close':
-      case 'fire-no':
-        if (act === 'fire-no' && this.confirming) {
-          this.confirming = false;
-          this.refreshMenu();
-        } else this.closeMenu();
-        return;
       case 'fire':
-        this.askFire();
+        if (this.confirming) this.cancelFire();
+        else this.askFire();
+        return;
+      case 'fire-no':
+        this.cancelFire();
         return;
       case 'fire-yes':
         this.send({ type: 'fire' });
@@ -439,6 +533,10 @@ export class OverlayUi {
       case 'office':
         this.closeMenu();
         this.office('staff');
+        return;
+      case 'sabotage':
+        this.closeMenu();
+        this.sabotage();
         return;
       case 'coffee':
       case 'praise':
@@ -456,27 +554,81 @@ export class OverlayUi {
 
   // ------------------------------------------------------------- chat
 
-  /** Open the chat field above the scene and focus it. */
+  /** Open the one-line chat box beside the worker's head and focus it. */
   openChat(draft = ''): void {
     const w = this.view.shownWorker;
-    if (!w) return;
+    if (!w || !this.view.clickable) return;
     this.chatOpen = true;
     this.chatInput.placeholder = `Say something to ${w.name.split(' ')[0] ?? w.name}…`;
     this.chatInput.value = draft;
     this.chat.hidden = false;
-    // The overlay is a non-activating corner window; ask for focus so the
-    // field can take keystrokes.
-    window.focus();
+    this.positionChat();
+    this.api.focusWindow();
     this.chatInput.focus();
+    this.touchChat();
     this.syncInteractive();
+  }
+
+  private sendChat(): void {
+    const text = this.chatInput.value.trim();
+    if (!text) return;
+    this.chatInput.value = '';
+    this.chatInput.placeholder = 'Say something else…';
+    this.bubbleAtSend = bubbleKey(this.state);
+    this.awaitingSince = Date.now();
+    this.view.setAwaiting(true);
+    window.setTimeout(() => {
+      if (this.awaitingSince && Date.now() - this.awaitingSince >= REPLY_TIMEOUT_MS) this.stopAwaiting();
+    }, REPLY_TIMEOUT_MS + 50);
+    this.touchChat();
+    void this.api.chat(text);
+  }
+
+  private stopAwaiting(): void {
+    this.awaitingSince = 0;
+    this.view.setAwaiting(false);
+  }
+
+  /** Something happened in the conversation; restart the idle clock. */
+  private touchChat(): void {
+    window.clearTimeout(this.chatIdleTimer);
+    if (!this.chatOpen) return;
+    this.chatIdleTimer = window.setTimeout(() => {
+      if (this.awaitingSince) this.touchChat();
+      else this.closeChat();
+    }, CHAT_IDLE_MS);
   }
 
   private closeChat(): void {
     this.chatOpen = false;
     this.chat.hidden = true;
     this.chatInput.blur();
-    this.chatFocused = false;
+    window.clearTimeout(this.chatIdleTimer);
     this.syncInteractive();
+  }
+
+  /**
+   * Beside the head at head height: the reply bubble goes above the head,
+   * so the two never meet. It takes the side away from the face when that
+   * has room (the face side is where reactions appear).
+   */
+  private positionChat(): void {
+    const h = this.view.head();
+    if (!h.visible) return;
+    const gap = 22;
+    const leftRoom = h.x - gap - 6;
+    const rightRoom = SCENE_W - 6 - (h.x + gap);
+    const away = h.facing > 0 ? 'left' : 'right';
+    const room = away === 'left' ? leftRoom : rightRoom;
+    const side = room >= 150 ? away : leftRoom > rightRoom ? 'left' : 'right';
+    const width = Math.min(220, side === 'left' ? leftRoom : rightRoom);
+    const x = side === 'left' ? h.x - gap - width : h.x + gap;
+    // On the face side, drop below where a heart would float.
+    const y = side === away ? h.y - 13 : h.y + 10;
+    this.chatSide = side;
+    this.chat.style.width = `${Math.round(width)}px`;
+    this.chat.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    this.chat.classList.toggle('on-right', side === 'right');
   }
 
   // ----------------------------------------------------------- bubble
@@ -503,7 +655,7 @@ export class OverlayUi {
       this.stopFollow();
       return;
     }
-    this.bubble.className = `bubble ${kind}`;
+    this.bubble.className = `bubble ${kind}${this.menuOpen ? ' muted' : ''}`;
     this.bubbleText.textContent = text;
     this.positionBubble(true);
     // Next frame, so the fade-in transition runs from opacity 0.
@@ -523,14 +675,19 @@ export class OverlayUi {
 
   private positionBubble(force = false): void {
     const h = this.view.head();
-    // Only walks move the head; skip frames where nothing changed.
-    if (!force && Math.abs(h.x - this.lastHead.x) < 0.3 && Math.abs(h.top - this.lastHead.top) < 0.3) return;
-    this.lastHead = { x: h.x, top: h.top };
+    const lift = this.view.bubbleLift;
+    // Only walks and storm clouds move it; skip frames where nothing changed.
+    const still =
+      Math.abs(h.x - this.lastHead.x) < 0.3 &&
+      Math.abs(h.top - this.lastHead.top) < 0.3 &&
+      lift === this.lastHead.lift;
+    if (!force && still) return;
+    this.lastHead = { x: h.x, top: h.top, lift };
     if (force) this.bubbleSize = { w: this.bubble.offsetWidth, h: this.bubble.offsetHeight };
     const w = this.bubbleSize.w;
     const ht = this.bubbleSize.h;
     const shout = this.bubble.classList.contains('shout');
-    const gap = this.bubble.classList.contains('think') ? 22 : 13;
+    const gap = (this.bubble.classList.contains('think') ? 22 : 13) + lift;
     const ideal = h.x - w / 2;
     // Shouts follow the worker off-screen; normal bubbles stay readable.
     const left = shout ? ideal : Math.max(6, Math.min(SCENE_W - w - 6, ideal));

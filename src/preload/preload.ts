@@ -26,6 +26,7 @@ const api: OvertimeApi = {
   openOffice: (tab) => ipcRenderer.send(CHANNELS.openOffice, tab),
   openPath: (path) => ipcRenderer.send(CHANNELS.openPath, path),
   setInteractive: (on) => ipcRenderer.send(CHANNELS.setInteractive, on),
+  focusWindow: () => ipcRenderer.send(CHANNELS.focusWindow),
   updateSettings: (patch) =>
     ipcRenderer.invoke(CHANNELS.updateSettings, patch),
   testClaude: () => ipcRenderer.invoke(CHANNELS.testClaude),

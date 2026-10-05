@@ -53,6 +53,7 @@ export type Arms =
   | 'fold'
   | 'phone'
   | 'scratch'
+  | 'clutch'
   | 'side'
   | 'swing'
   | 'mug'
@@ -71,6 +72,8 @@ export interface PersonOptions {
   hairOnEnd?: boolean;
   /** X-ray view: a dark silhouette with white bones (electric shocks). */
   skeleton?: boolean;
+  /** Bright pink cheeks: flattered or embarrassed. */
+  blush?: boolean;
 }
 
 export interface PersonSvgOptions extends PersonOptions {
@@ -265,6 +268,12 @@ function armsFor(kind: Arms, rig: Rig): ArmPair {
       return {
         near: [pt(-3, -60), pt(-9.5, -78.5)],
         far: [pt(5, -40), pt(23, -43.5)],
+      };
+    case 'clutch':
+      // Both hands gripping the sides of the head: a bug they can't explain.
+      return {
+        near: [pt(27, -58), pt(21, -79)],
+        far: [pt(-14, -58), pt(-10, -81)],
       };
     case 'side': {
       const farDx = -2.5 * (1 - t) + 1 * t;
@@ -807,8 +816,14 @@ function glasses(t: number, expr: Expression, p: Paint): string {
   );
 }
 
-function cheeks(expr: Expression, t: number): string {
+function cheeks(expr: Expression, t: number, blush: boolean): string {
   const { near, far } = eyesFor(t);
+  if (blush) {
+    const one = (e: EyeSpot, dx: number): string =>
+      `<ellipse cx="${num(e.x + dx)}" cy="${num(e.y + 6.8)}" rx="${num(3.8 * e.sx)}" ry="2.3" fill="#ff5f8a" opacity="0.75"/>` +
+      `<path d="M${num(e.x + dx - 1.8 * e.sx)},${num(e.y + 6.2)} l0.9,1.4 M${num(e.x + dx)},${num(e.y + 5.9)} l0.9,1.4 M${num(e.x + dx + 1.8 * e.sx)},${num(e.y + 6.2)} l0.9,1.4" stroke="#d63a64" stroke-width="0.8" stroke-linecap="round"/>`;
+    return one(far, -1.2) + one(near, 1);
+  }
   const tone =
     expr === 'angry' ? '#ff4d4d' : expr === 'tired' || expr === 'scared' ? '' : '#ff8f8f';
   if (!tone) return '';
@@ -846,7 +861,7 @@ function head(look: Look, opts: PersonOptions, rig: Rig, p: Paint): { back: stri
   const hair = hairFor(style, t, p);
   const face = p.xray
     ? skull(t)
-    : cheeks(opts.expression, t) +
+    : cheeks(opts.expression, t, !!opts.blush) +
       eyesAndBrows(opts.expression, t, !!opts.crazed, p) +
       (look.glasses ? glasses(t, opts.expression, p) : '') +
       mouthFor(opts.expression, pt(0.5 + 2.8 * t, 9.5), p);

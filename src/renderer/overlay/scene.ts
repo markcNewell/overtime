@@ -18,11 +18,11 @@ export const SEAT_X = 200;
 export const COFFEE_X = 92;
 export const OFF_LEFT = -70;
 export const OFF_RIGHT = 450;
-/** Monitor screen centre; the screen is drawn around it, skewed slightly. */
 /** Top surface of the desk and the coffee counter. */
 const TOP = 262;
-const SCREEN_X = 298;
-const SCREEN_Y = TOP - 27.5;
+/** Monitor screen centre; the screen is drawn around it, skewed slightly. */
+export const SCREEN_X = 298;
+export const SCREEN_Y = TOP - 27.5;
 /** Inner screen size in screen-local units. */
 export const SCREEN_W = 65;
 export const SCREEN_H = 37;
@@ -201,6 +201,50 @@ function codeLines(): string {
   return `<g class="code-scroll">${out}</g>`;
 }
 
+/**
+ * A little cartoon bug seen from above, facing right, about 14 px long.
+ * Legs sit in `.bug-legs` so CSS can make it scuttle.
+ */
+export function bugMarkup(): string {
+  const leg = (x: number, dir: number): string =>
+    `M${x},${dir * 2.5} q${-1.5},${dir * 2.5} ${-3},${dir * 4.6}`;
+  const legs = [-2.6, 0.2, 3].flatMap((x) => [leg(x, 1), leg(x, -1)]).join(' ');
+  return (
+    `<g class="bug">` +
+    `<path class="bug-legs" d="${legs}" fill="none" stroke="${LINE}" stroke-width="1.3" stroke-linecap="round"/>` +
+    `<path d="M7.6,-1.8 q2.6,-1.6 3.6,-3.8 M7.6,1.8 q2.6,1.6 3.6,3.8" fill="none" stroke="${LINE}" stroke-width="1" stroke-linecap="round"/>` +
+    `<circle cx="6.2" cy="0" r="2.9" fill="${LINE}"/>` +
+    `<ellipse cx="0" cy="0" rx="5.8" ry="4.4" fill="#ff4d4d" stroke="${LINE}" stroke-width="1.3"/>` +
+    `<path d="M-5.6,0 L5.4,0" stroke="${LINE}" stroke-width="0.9"/>` +
+    `<circle cx="-2.4" cy="-2" r="1.05" fill="${LINE}"/><circle cx="1.8" cy="2" r="1.05" fill="${LINE}"/><circle cx="2" cy="-2.1" r="0.85" fill="${LINE}"/>` +
+    `<circle cx="7.1" cy="-1" r="0.65" fill="#ffffff"/><circle cx="7.1" cy="1" r="0.65" fill="#ffffff"/>` +
+    `</g>`
+  );
+}
+
+/** Red and white noise bars for a broken screen. */
+function glitchBars(): string {
+  const hw = SCREEN_W / 2;
+  const bars: Array<[number, number, string]> = [
+    [-15, 3, '#ffffff'],
+    [-8, 2, '#ff4d4d'],
+    [-2, 4, '#7ad7f0'],
+    [5, 2, '#ffffff'],
+    [10, 3, '#ff4d4d'],
+  ];
+  return (
+    `<g id="screen-glitch">` +
+    bars
+      .map(
+        ([y, h, c], i) =>
+          `<rect class="glitch-bar g${i}" x="${-hw}" y="${y}" width="${SCREEN_W}" height="${h}" fill="${c}" opacity="0.75"/>`,
+      )
+      .join('') +
+    `<text x="0" y="3" text-anchor="middle" font-family="${FONT}" font-size="9" font-weight="900" fill="#ff4d4d" stroke="#1b2133" stroke-width="2.4" paint-order="stroke" class="glitch-err">ERROR</text>` +
+    `</g>`
+  );
+}
+
 function screenContent(): string {
   const hw = SCREEN_W / 2;
   const hh = SCREEN_H / 2;
@@ -228,6 +272,9 @@ function screenContent(): string {
     rect(-PROGRESS_W / 2, hh - 6.5, PROGRESS_W, 3.6, '#39425a', 'rx="1.8"') +
     rect(-PROGRESS_W / 2, hh - 6.5, 0, 3.6, '#5ce07a', 'id="progress-fill" rx="1.8"') +
     `</g>` +
+    glitchBars() +
+    // The bug the boss planted sits on their screen until they fix it.
+    `<g id="mystery-bug" transform="translate(-17 3) rotate(-20) scale(1.15)">${bugMarkup()}</g>` +
     `</g>`
   );
 }
@@ -257,7 +304,7 @@ function monitor(): string {
   const hw = SCREEN_W / 2 + 3.5;
   const hh = SCREEN_H / 2 + 3.5;
   return (
-    `<g id="monitor" data-hit="monitor">` +
+    `<g id="monitor" class="hit" data-hit="monitor">` +
     `<ellipse cx="${SCREEN_X + 1}" cy="${TOP - 0.4}" rx="15" ry="2.6" fill="#3b3e52" ${stroke(1.2)}/>` +
     rect(SCREEN_X - 3.5, TOP - 14, 8, 13, '#4a4e66', stroke(1.2)) +
     `<g transform="translate(${SCREEN_X} ${SCREEN_Y}) skewY(-5)">` +
@@ -384,6 +431,23 @@ function worker(): string {
     `<text class="z z2" x="7" y="-10" font-family="${FONT}" font-weight="900" font-size="14" fill="#ffffff" stroke="${LINE}" stroke-width="2.4" paint-order="stroke">z</text>` +
     `<text class="z z3" x="15" y="-21" font-family="${FONT}" font-weight="900" font-size="17" fill="#ffffff" stroke="${LINE}" stroke-width="2.6" paint-order="stroke">Z</text>` +
     `</g>` +
+    // Scaled in the markup: a CSS scale would also scale the anchor offset.
+    `<g class="fx-heart"><g transform="scale(1.45)">` +
+    `<path class="heart h1" d="M0,4 C-7,-0.5 -6.4,-7.4 -3,-7.4 C-1.4,-7.4 -0.4,-6.4 0,-5.2 C0.4,-6.4 1.4,-7.4 3,-7.4 C6.4,-7.4 7,-0.5 0,4 Z" fill="#ff5f8a" ${stroke(1.3)}/>` +
+    `<path class="heart h2" d="M0,4 C-7,-0.5 -6.4,-7.4 -3,-7.4 C-1.4,-7.4 -0.4,-6.4 0,-5.2 C0.4,-6.4 1.4,-7.4 3,-7.4 C6.4,-7.4 7,-0.5 0,4 Z" fill="#ff8fb0" ${stroke(1.3)}/>` +
+    `</g></g>` +
+    `<g class="fx-storm"><g transform="scale(1.3)">` +
+    `<path class="storm-bolt" d="M-1,3 L-4,10 L-0.5,9.5 L-2.5,16 L4,7 L0.5,7.5 L2.5,3 Z" fill="#ffd23f" ${stroke(1.1)}/>` +
+    `<path class="storm-rain" d="M-9,5 l-1.4,4 M-5,6 l-1.4,4 M6,5 l-1.4,4 M10,4 l-1.4,4" stroke="#7cc8ff" stroke-width="1.5" stroke-linecap="round"/>` +
+    `<g class="storm-cloud">` +
+    [[-8, 0, 5.4], [-2, -4, 6.6], [5, -2.5, 5.8], [10, 1, 4.2], [1, 1.5, 5.5]]
+      .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${(r ?? 0) + 1.4}" fill="${LINE}"/>`)
+      .join('') +
+    [[-8, 0, 5.4], [-2, -4, 6.6], [5, -2.5, 5.8], [10, 1, 4.2], [1, 1.5, 5.5]]
+      .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#6f7386"/>`)
+      .join('') +
+    `<path d="M-6,-3 q3,-4 7,-3" fill="none" stroke="#8d91a3" stroke-width="1.6" stroke-linecap="round"/>` +
+    `</g></g></g>` +
     `<g class="fx-thinking">` +
     `<circle cx="-7" cy="9" r="2" fill="#ffffff" ${stroke(1.1)}/>` +
     rect(-4, -8, 26, 13, '#ffffff', `rx="6.5" ${stroke(1.3)}`) +

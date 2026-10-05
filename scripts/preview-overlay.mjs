@@ -78,7 +78,7 @@ const ZOOMS = {
   stuck: [140, 170, 140, 135],
   asleep: [150, 200, 120, 105],
   idle: [140, 190, 140, 115],
-  coffee: [40, 180, 120, 125],
+
   crazy: [140, 190, 140, 115],
   unhinged: [140, 190, 140, 115],
   tired: [140, 190, 140, 115],
@@ -91,9 +91,16 @@ const ZOOMS = {
   'react-cruel': [120, 140, 170, 165],
   'react-cruel-bitter': [140, 160, 140, 140],
   glitch: [190, 180, 170, 110],
-  hover: [150, 150, 230, 150],
+  hover: [20, 150, 230, 150],
   'chat-reply': [0, 120, 380, 170],
   menu: [130, 110, 250, 160],
+  'making-coffee': [10, 180, 150, 125],
+  'walk-back-with-mug': [60, 180, 150, 125],
+  'drinking-at-desk': [150, 190, 140, 115],
+  'drinking-sip': [150, 190, 140, 115],
+  'drinking-stuck-sip': [150, 175, 140, 130],
+  'scared-ask': [140, 180, 200, 125],
+  'scared-ask-3': [140, 180, 200, 125],
   email: [200, 180, 150, 100],
   'email-read': [200, 180, 150, 100],
   'email-many': [200, 180, 150, 100],
@@ -101,7 +108,7 @@ const ZOOMS = {
 };
 
 // New-feature states shot again over a loud wallpaper, to check legibility.
-const BUSY = ['menu', 'menu-fire', 'chat-reply', 'chat-coffee', 'glitch', 'mystery-stuck', 'react-kind', 'react-cruel', 'hover', 'monitor-tip', 'email', 'email-read'];
+const BUSY = ['menu', 'menu-fire', 'chat-reply', 'chat-coffee', 'glitch', 'mystery-stuck', 'react-kind', 'react-cruel', 'hover', 'monitor-tip', 'email', 'email-read', 'making-coffee', 'drinking-sip', 'scared-ask', 'scared-ask-3'];
 
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
@@ -196,7 +203,9 @@ app.whenReady().then(async () => {
     ['interact-sabotage', 'working', [...click(300, 232)], 450],
     ['interact-sabotage-after', 'working', [...click(300, 232)], 2400],
     ['interact-monitor-tip', 'working', [['mouseMoved', 300, 232]], 300],
-    ['interact-email-tip', 'email-many', [['mouseMoved', 274, 254]], 300],
+    ['interact-email-tip', 'email-many', [['mouseMoved', 291, 254]], 300],
+    ['interact-ask-yes', 'scared-ask', [['wait', 100], ...click(262, 223)], 1500],
+    ['interact-ask-no', 'scared-ask', [['wait', 100], ...click(327, 223)], 400],
     ['interact-hover', 'working', [[ 'mouseMoved', 203, 250 ]], 700],
     ['interact-menu', 'working', [...click(354, 240)], 400],
     ['interact-zap', 'working', [[ 'mouseMoved', 203, 250 ], [ 'mousePressed', 203, 250 ], [ 'mouseReleased', 203, 250 ]], 260],

@@ -225,21 +225,24 @@ export function planFor(
   }
   if (a === 'coffee') {
     const x0 = fromX ?? SEAT_X;
-    if (Math.abs(x0 - COFFEE_X) < 2) {
-      return { key, start: since, segments: [hold('drink', COFFEE_X)] };
-    }
+    // At the machine, facing it, pressing buttons while it brews.
+    const making = hold('drink', COFFEE_X, { arms: 'make', facing: -1, sceneCls: 'brewing' });
+    if (Math.abs(x0 - COFFEE_X) < 2) return { key, start: since, segments: [making] };
     // Starting from wherever they are; if the overlay opened mid-break the
     // elapsed time skips straight past the walk.
     return {
       key,
       start: fromX === undefined ? since : Math.max(since, now - 200),
-      segments: [walk(x0, COFFEE_X), hold('drink', COFFEE_X)],
+      segments: [walk(x0, COFFEE_X), making],
     };
   }
   if (SEATED.includes(a)) {
     const seated = seatedHold(a, mystery);
     if (atSeat) return { key, start: since, segments: [seated] };
-    return { key, start: now, segments: [walk(fromX, SEAT_X), seated] };
+    // Back from the machine they carry the mug they just made.
+    const fromMachine = Math.abs(fromX - COFFEE_X) < 2 || (worker.drinkingFor ?? 0) > 0;
+    const back = walk(fromX, SEAT_X, fromMachine ? { arms: 'carry' } : {});
+    return { key, start: now, segments: [back, seated] };
   }
   return { key, start: since, segments: [seatedHold('idle')] };
 }

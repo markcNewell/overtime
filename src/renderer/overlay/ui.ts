@@ -125,8 +125,11 @@ export class OverlayUi {
   private readonly chat: HTMLFormElement;
   private readonly chatInput: HTMLInputElement;
   private readonly tip: HTMLDivElement;
+  private readonly ask: HTMLDivElement;
 
   private state?: GameState;
+  /** The coffee request already answered, so its buttons stay hidden. */
+  private answeredAsk = '';
   private hitEl: Element | null = null;
   private tipEl: Element | null = null;
   private interactive = false;
@@ -164,11 +167,18 @@ export class OverlayUi {
     );
     this.chatInput = this.chat.querySelector('input') as HTMLInputElement;
     this.tip = el(`<div class="tip" hidden></div>`);
-    stage.append(this.bubble, this.card, this.chat, this.menu, this.tip);
+    this.ask = el(
+      `<div class="ask" data-hit="ask" hidden>` +
+        `<button class="ask-yes" type="button" data-ask="yes">Go on then</button>` +
+        `<button class="ask-no" type="button" data-ask="no">No</button>` +
+        `</div>`,
+    );
+    stage.append(this.bubble, this.card, this.chat, this.ask, this.menu, this.tip);
     this.bind();
     view.onSegment = () => {
       this.updateBubble();
       if (this.chatOpen) this.positionChat();
+      this.updateAsk();
     };
   }
 
@@ -185,6 +195,7 @@ export class OverlayUi {
       if (!state.bubble) this.stopAwaiting();
     }
     this.updateBubble();
+    this.updateAsk();
     if (this.cardOpen) this.fillCard();
     if (this.menuOpen) this.refreshMenu();
     if (this.chatOpen && !this.view.clickable) this.closeChat();
@@ -261,6 +272,11 @@ export class OverlayUi {
       if (target.closest('.chat-x')) this.closeChat();
       return;
     }
+    const answer = target?.closest('[data-ask]')?.getAttribute('data-ask');
+    if (answer) {
+      this.answerAsk(answer === 'yes');
+      return;
+    }
     const hit = target?.closest('[data-hit]')?.getAttribute('data-hit');
     if (this.menuOpen && hit !== 'clipboard') this.closeMenu();
     switch (hit) {
@@ -306,6 +322,44 @@ export class OverlayUi {
     if (!this.view.canSabotage) return;
     this.view.effect({ type: 'glitch' }, true);
     void this.api.act({ type: 'sabotage' });
+  }
+
+  // ------------------------------------------------------- coffee ask
+
+  private askKey(): string {
+    const w = this.state?.worker;
+    return w?.wantsCoffeeSince ? `${w.id}|${w.wantsCoffeeSince}|${w.coffeeAsks ?? 1}` : '';
+  }
+
+  /**
+   * A worker scared of the boss asks before taking a coffee. Two buttons sit
+   * beside their face until the boss answers, even after the bubble fades.
+   */
+  private updateAsk(): void {
+    const key = this.askKey();
+    const show = !!key && key !== this.answeredAsk && this.view.clickable && this.view.head().visible;
+    if (!show) {
+      if (!this.ask.hidden) {
+        this.ask.hidden = true;
+        if (this.hitEl?.closest('.ask')) this.setHit(null);
+      }
+      return;
+    }
+    const nervous = (this.state?.worker?.coffeeAsks ?? 1) >= 3;
+    this.ask.classList.toggle('nervous', nervous);
+    this.ask.hidden = false;
+    const h = this.view.head();
+    const w = this.ask.offsetWidth;
+    // On the face side, level with the eyes: they're looking at you.
+    const ideal = h.facing > 0 ? h.x + 21 : h.x - 21 - w;
+    const x = Math.max(4, Math.min(SCENE_W - w - 4, ideal));
+    this.ask.style.transform = `translate(${Math.round(x)}px, ${Math.round(h.y - 14)}px)`;
+  }
+
+  private answerAsk(yes: boolean): void {
+    this.answeredAsk = this.askKey();
+    this.updateAsk();
+    void this.api.act({ type: yes ? 'coffee' : 'deny-coffee' });
   }
 
   // ------------------------------------------------------------- tips
@@ -382,8 +436,11 @@ export class OverlayUi {
     const w = this.card.offsetWidth;
     const ht = this.card.offsetHeight;
     // Keep clear of the chat box, which sits on the roomier side.
-    let right = h.x > SCENE_W / 2;
+    // The roomier side of the head.
+    let right = h.x < SCENE_W / 2;
     if (this.chatOpen) right = this.chatSide === 'left';
+    // The coffee question sits on the face side; keep the card off it.
+    if (!this.ask.hidden) right = h.facing < 0;
     const left = right ? h.x + 24 : h.x - w - 24;
     const top = Math.max(4, Math.min(296 - ht, h.y - ht + 6));
     const x = Math.max(4, Math.min(SCENE_W - w - 4, left));

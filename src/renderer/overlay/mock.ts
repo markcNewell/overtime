@@ -31,11 +31,15 @@ export interface MockUi {
   effect?: Effect;
   /** ms after load to play `effect`. */
   effectAt?: number;
+  /** ms after load to take a sip from the desk mug. */
+  sipAt?: number;
 }
 
 interface Scenario {
   build: (now: number) => GameState;
   ui?: MockUi;
+  /** Worker changes pushed at set times after load, e.g. heading back. */
+  later?: Array<{ at: number; worker: Partial<Worker> }>;
 }
 
 const MIN = 60_000;
@@ -72,7 +76,7 @@ function worker(now: number, look: Look, patch: Partial<Worker> = {}): Worker {
     hiredAt: now - 3 * 24 * 60 * MIN,
     stats: { energy: 72, mood: 70, sanity: 82 },
     xp: 64,
-    ledger: { shocks: 1, shouts: 0, praises: 3, bonuses: 0, kindChats: 4, cruelChats: 0, coffees: 2, sabotages: 0 },
+    ledger: { shocks: 1, shouts: 0, praises: 3, bonuses: 0, kindChats: 4, cruelChats: 0, coffees: 2, sabotages: 0, coffeeDenials: 0 },
     attitude: 'loyal',
     memories: [],
     projectsDone: 2,
@@ -81,7 +85,7 @@ function worker(now: number, look: Look, patch: Partial<Worker> = {}): Worker {
     recentShocks: [],
     recentPraises: [],
     recentSabotages: [],
-    minutesSinceBreak: 25,
+    coffeeTimer: 12,
     lowMoodMinutes: 0,
     ...patch,
   };
@@ -192,8 +196,36 @@ const SCENARIOS: Record<string, Scenario> = {
     build: at('working', LOOKS.dev, { patch: { boost: { multiplier: 1.8, until: Date.now() + 8 * MIN }, stats: { energy: 60, mood: 48, sanity: 70 } } }),
   },
   stuck: { build: at('stuck', LOOKS.sam, { stuckOn: 0, progress: 0.31, patch: { stats: { energy: 55, mood: 44, sanity: 70 } } }) },
-  coffee: { build: at('coffee', LOOKS.mei, { since: 40_000, patch: { coffeeUntil: Date.now() + 5 * MIN } }) },
+  'making-coffee': { build: at('coffee', LOOKS.mei, { since: 40_000, patch: { coffeeUntil: Date.now() + MIN } }) },
   'coffee-walk': { build: at('coffee', LOOKS.mei, { since: 1500 - SHOT_DELAY }) },
+  'walk-back-with-mug': {
+    build: at('coffee', LOOKS.mei, { since: 90_000 }),
+    later: [{ at: 0, worker: { activity: 'working', activitySince: Date.now(), drinkingFor: 6 } }],
+  },
+  'drinking-at-desk': { build: at('working', LOOKS.mei, { patch: { drinkingFor: 6 } }) },
+  'drinking-sip': { build: at('working', LOOKS.mei, { patch: { drinkingFor: 6 } }), ui: { sipAt: SHOT_DELAY - 400 } },
+  'drinking-stuck-sip': {
+    build: at('stuck', LOOKS.sam, { stuckOn: 0, progress: 0.31, patch: { drinkingFor: 4, stats: { energy: 55, mood: 44, sanity: 70 } } }),
+    ui: { sipAt: SHOT_DELAY - 400 },
+  },
+  'drinking-idle': { build: at('idle', LOOKS.rex, { progress: null, patch: { drinkingFor: 4 } }) },
+  'scared-ask': {
+    build: at('working', LOOKS.sam, {
+      patch: { attitude: 'scared', wantsCoffeeSince: Date.now() - MIN, coffeeAsks: 1, nextAskIn: 4 },
+      extra: { bubble: { kind: 'say', text: 'Um, boss? Could I... maybe get a coffee?', until: Date.now() + MIN } },
+    }),
+  },
+  'scared-ask-3': {
+    build: at('working', LOOKS.sam, {
+      patch: { attitude: 'scared', wantsCoffeeSince: Date.now() - 9 * MIN, coffeeAsks: 3, nextAskIn: 4, stats: { energy: 18, mood: 30, sanity: 55 } },
+      extra: { bubble: { kind: 'say', text: 'Sorry to ask again. Please? Just a small one?', until: Date.now() + MIN } },
+    }),
+  },
+  'scared-ask-faded': {
+    build: at('working', LOOKS.priya, {
+      patch: { attitude: 'scared', wantsCoffeeSince: Date.now() - 3 * MIN, coffeeAsks: 2, nextAskIn: 3 },
+    }),
+  },
   asleep: { build: at('asleep', LOOKS.priya, { patch: { stats: { energy: 0, mood: 40, sanity: 60 } } }) },
   idle: { build: at('idle', LOOKS.rex, { progress: null }) },
   tired: { build: at('working', LOOKS.gus, { patch: { stats: { energy: 12, mood: 50, sanity: 64 } } }) },
@@ -366,10 +398,26 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
     const w = current.worker;
     if (!w) return;
     switch (a.type) {
-      case 'coffee':
-        patchWorker({ activity: 'coffee', activitySince: Date.now() });
-        window.setTimeout(() => patchWorker({ activity: current.project ? 'working' : 'idle', activitySince: Date.now() }), 9000);
+      case 'coffee': {
+        const { wantsCoffeeSince: _asked, coffeeAsks: _asks, nextAskIn: _next, ...rest } = w;
+        push({ worker: { ...rest, activity: 'coffee', activitySince: Date.now(), coffeeUntil: Date.now() + 9000 } });
+        window.setTimeout(
+          () =>
+            patchWorker({
+              activity: current.project ? 'working' : 'idle',
+              activitySince: Date.now(),
+              drinkingFor: 2,
+            }),
+          9000,
+        );
         return;
+      }
+      case 'deny-coffee': {
+        const { wantsCoffeeSince: _asked, coffeeAsks: _asks, nextAskIn: _next, ...rest } = w;
+        push({ worker: { ...rest, ledger: { ...w.ledger, coffeeDenials: w.ledger.coffeeDenials + 1 } } });
+        say('Oh. Okay. Sorry. Of course.');
+        return;
+      }
       case 'praise':
         patchWorker({ stats: { ...w.stats, mood: Math.min(100, w.stats.mood + 8) } });
         say('Aw, thanks boss!');
@@ -444,5 +492,8 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
     updateSettings: async () => undefined,
     testClaude: async () => ({ ok: true, message: 'mock' }),
   };
+  for (const step of scenario.later ?? []) {
+    window.setTimeout(() => patchWorker({ ...step.worker, activitySince: Date.now() }), step.at + 50);
+  }
   return { api, ui: scenario.ui ?? {} };
 }

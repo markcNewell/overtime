@@ -15,7 +15,7 @@ export const FLOOR_Y = 300;
 /** Worker x (hip centre) when seated at the desk. */
 export const SEAT_X = 200;
 /** Worker x when standing at the coffee machine. */
-export const COFFEE_X = 92;
+export const COFFEE_X = 88;
 export const OFF_LEFT = -70;
 export const OFF_RIGHT = 450;
 /** Top surface of the desk and the coffee counter. */
@@ -23,6 +23,9 @@ const TOP = 262;
 /** Monitor screen centre; the screen is drawn around it, skewed slightly. */
 export const SCREEN_X = 298;
 export const SCREEN_Y = TOP - 27.5;
+/** Desk layout left to right: keyboard, coffee mug, mouse, monitor. */
+const DESK_MUG_X = 256;
+const MOUSE_X = 277;
 /** Inner screen size in screen-local units. */
 export const SCREEN_W = 65;
 export const SCREEN_H = 37;
@@ -71,6 +74,14 @@ function coffeeMachine(): string {
     rect(39, y + 26, 10, 6, '#b8c2cc', `rx="1.5" ${stroke(1.2)}`) +
     rect(42.5, y + 32, 3, 3, '#8d94a3') +
     rect(30, y + 48, 28, 5, '#8d94a3', `rx="1.5" ${stroke(1.2)}`) +
+    // While brewing: a mug on the drip tray and a stream pouring into it.
+    `<g id="coffee-brew">` +
+    `<path class="brew-stream" d="M44,${y + 35} L44,${y + 41.5}" stroke="#7a4524" stroke-width="2.2" stroke-linecap="round"/>` +
+    `<path d="M47.6,${y + 43.5} q3.6,0 3.6,2.6 q0,2.6 -3.6,2.4" fill="none" stroke="${LINE}" stroke-width="3"/>` +
+    `<path d="M47.6,${y + 43.5} q3.6,0 3.6,2.6 q0,2.6 -3.6,2.4" fill="none" stroke="#ffffff" stroke-width="1.2"/>` +
+    rect(39.5, y + 41, 9, 7.6, '#ffffff', `rx="1.4" ${stroke(1.2)}`) +
+    rect(40.2, y + 44, 7.6, 2, '#e9573f') +
+    `</g>` +
     `<g id="coffee-steam" class="steam">` +
     `<path d="M36,${y - 4} q-3,-4 0,-8 q3,-4 0,-8" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>` +
     `<path d="M45,${y - 6} q-3,-4 0,-8 q3,-4 0,-8" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>` +
@@ -167,7 +178,28 @@ function keyboard(): string {
     `<g id="keyboard">` +
     `<path d="M215,${TOP} L217.5,${TOP - 4.5} L250.5,${TOP - 4.5} L253,${TOP} Z" fill="#e8e6f0" ${stroke(1.2)}/>` +
     keys +
-    `<ellipse cx="260" cy="${TOP - 1.6}" rx="3.6" ry="2" fill="#e8e6f0" ${stroke(1.1)}/>` +
+    `<ellipse cx="${MOUSE_X}" cy="${TOP - 1.6}" rx="3.6" ry="2" fill="#e8e6f0" ${stroke(1.1)}/>` +
+    `</g>`
+  );
+}
+
+/**
+ * Their own fresh coffee, steaming beside the keyboard while they drink it.
+ * Hidden while it is up at their mouth for a sip.
+ */
+function deskCoffee(): string {
+  const x = DESK_MUG_X;
+  const y = TOP - 10.5;
+  const wisp = (dx: number): string =>
+    `<path d="M${x + dx},${y - 2} q-2.2,-3 0,-6 q2.2,-3 0,-6" fill="none" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>`;
+  return (
+    `<g id="desk-coffee">` +
+    `<g class="steam">${wisp(3)}${wisp(7)}</g>` +
+    `<path d="M${x + 9},${y + 2.6} q4,0 4,3 q0,3 -4,2.8" fill="none" stroke="${LINE}" stroke-width="3.4"/>` +
+    `<path d="M${x + 9},${y + 2.6} q4,0 4,3 q0,3 -4,2.8" fill="none" stroke="#ffffff" stroke-width="1.5"/>` +
+    rect(x, y, 10, 10.5, '#ffffff', `rx="1.8" ${stroke(1.3)}`) +
+    rect(x + 0.7, y + 4, 8.6, 2.6, '#e9573f') +
+    `<ellipse cx="${x + 5}" cy="${y + 1.2}" rx="3.6" ry="0.9" fill="#6b3f22"/>` +
     `</g>`
   );
 }
@@ -336,9 +368,9 @@ function clipboard(): string {
 }
 
 /** Where the old mug stands: in front of the monitor stand. */
-const MUG_X = 301;
-/** Where the email envelope leans: between the mouse and the monitor. */
-export const ENVELOPE = { x: 274, y: TOP };
+const MUG_X = 303;
+/** Where the email envelope leans: against the monitor stand. */
+export const ENVELOPE = { x: 291, y: TOP };
 
 function leftoverMug(): string {
   const y = TOP - 11;
@@ -395,6 +427,7 @@ function deskItems(): string {
   return (
     `<g id="desk-items">` +
     keyboard() +
+    deskCoffee() +
     monitor() +
     leftoverMug() +
     leftoverFolder() +

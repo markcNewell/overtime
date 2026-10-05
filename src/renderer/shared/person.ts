@@ -57,6 +57,9 @@ export type Arms =
   | 'side'
   | 'swing'
   | 'mug'
+  | 'make'
+  | 'carry'
+  | 'sip'
   | 'box'
   | 'up'
   | 'fists';
@@ -291,6 +294,24 @@ function armsFor(kind: Arms, rig: Rig): ArmPair {
       return {
         near: [rel(s.near, 7.5, 8), rel(s.near, -1.5, -10)],
         far: [rel(s.far, -3, 11), rel(s.far, -4, 21)],
+      };
+    case 'make':
+      // Reaching out to the coffee machine's buttons; other hand on the hip.
+      return {
+        near: [rel(s.near, 10, 6), rel(s.near, 19, 1)],
+        far: [rel(s.far, -6, 9), rel(s.far, -1, 18)],
+      };
+    case 'carry':
+      // Walking back with a fresh mug held out in front, carefully.
+      return {
+        near: [rel(s.near, 3, 11), rel(s.near, 13, 8)],
+        far: [rel(s.far, 1, 11), rel(s.far, 2.5, 21)],
+      };
+    case 'sip':
+      // Seated: mug up at the mouth, the other hand still on the keyboard.
+      return {
+        near: [pt(23, -46), pt(21, -61)],
+        far: [pt(5, -40), pt(23, -43.5)],
       };
     case 'box':
       return {
@@ -951,6 +972,8 @@ export function personGroup(look: Look, opts: PersonOptions): string {
   let heldFront = '';
   if (armsKind === 'phone') heldBehind = phone(lerp(nearHand, farHand, 0.5));
   if (armsKind === 'mug') heldFront = mug(add(nearHand, pt(1.5, -1)), -22);
+  if (armsKind === 'carry') heldFront = mug(add(nearHand, pt(2.5, -3)), 0);
+  if (armsKind === 'sip') heldBehind = mug(add(nearHand, pt(-4.5, -1.5)), -28);
   if (armsKind === 'box') heldBehind = box(add(s.near, pt(4, 15)));
 
   const underHead = armsKind === 'fold';

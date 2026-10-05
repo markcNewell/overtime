@@ -82,8 +82,16 @@ export function faceFor(w: Worker): Face {
   if (w.activity === 'stuck') e = mood < 25 ? 'angry' : 'scared';
   if (energy < 20 && e !== 'angry') e = 'tired';
   if (w.activity === 'coffee' && mood >= 30 && energy >= 20) e = 'happy';
+  // Asking the boss for a coffee a second or third time takes nerve.
+  if (w.wantsCoffeeSince && (w.coffeeAsks ?? 1) >= 2) e = 'scared';
   return { expression: e, crazed };
 }
+
+/** Activities during which they sip from a mug on the desk. */
+const SIPPING_ACTIVITIES = new Set(['working', 'stuck', 'idle']);
+/** A sip lasts this long, about every ten seconds. */
+const SIP_MS = 1500;
+const SIP_EVERY_MS = 10_000;
 
 const LEFTOVER_CLASS: Record<Leftover['kind'], string> = {
   mug: 'left-mug',
@@ -143,6 +151,8 @@ export class SceneView {
   private readonly sceneTransient = new Set<string>();
   private awaiting = false;
   private lastLocalGlitch = 0;
+  private sipping = false;
+  private nextSipAt = 0;
   private sceneCls = '';
   private workerCls = '';
   private tips = new Map<string, string>();
@@ -414,6 +424,7 @@ export class SceneView {
     };
     if (reacted && r?.tone === 'kind' && !zapped && !seg.expression) opts.blush = true;
     if (seg.arms) opts.arms = seg.arms;
+    if (this.sipping && this.canSip()) opts.arms = 'sip';
     const key = JSON.stringify([w.look, opts]);
     if (key !== this.bodyKey) {
       this.body.innerHTML = personGroup(w.look, opts);
@@ -496,6 +507,8 @@ export class SceneView {
     if (w && !s?.project && (w.activity === 'idle' || w.activity === 'working')) c.push('needs-project');
     if (s?.brainStatus === 'thinking' || (this.awaiting && w)) c.push('brain-thinking');
     if (w && isMysteryStuck(s)) c.push('mystery');
+    if (this.isDrinking()) c.push('drinking');
+    if (this.sipping) c.push('sipping');
     const complaints = s?.complaints ?? [];
     if (complaints.some((m) => !m.reply) || this.sceneTransient.has('email-new')) c.push('has-email');
     if (complaints.some((m) => !m.readAt)) c.push('email-unread');
@@ -513,6 +526,12 @@ export class SceneView {
     if (seg?.cls) wc.push(seg.cls);
     if (seg?.hidden || !w) wc.push('is-hidden');
     if (this.pointerOver && w?.attitude === 'scared' && w.activity !== 'leaving') wc.push('trembling');
+    if (w?.wantsCoffeeSince && w.activity !== 'leaving') {
+      const asks = w.coffeeAsks ?? 1;
+      wc.push('asking');
+      if (asks >= 2) wc.push('ask-nervous');
+      if (asks >= 3) wc.push('ask-desperate');
+    }
     wc.push(...this.transient);
     const workerCls = wc.join(' ');
     if (workerCls !== this.workerCls) {
@@ -559,6 +578,51 @@ export class SceneView {
     if (!this.state) return;
     const now = Date.now();
     if (this.worker && !this.state.worker) this.render(this.state);
+    this.scheduleSip(now);
     this.updateClasses(now);
+  }
+
+  /** Their fresh mug is on the desk: back at the desk with coffee left. */
+  private isDrinking(): boolean {
+    const w = this.worker;
+    const pose = this.live?.seg.pose;
+    return !!w && (w.drinkingFor ?? 0) > 0 && w.activity !== 'leaving' && !!pose?.startsWith('sit');
+  }
+
+  /** Awake, at the desk, with a free hand: a sip is possible. */
+  private canSip(): boolean {
+    const w = this.worker;
+    const pose = this.live?.seg.pose;
+    return (
+      this.isDrinking() &&
+      !!w &&
+      SIPPING_ACTIVITIES.has(w.activity) &&
+      (pose === 'sit-type' || pose === 'sit-idle')
+    );
+  }
+
+  /** Called once a second: start a sip roughly every ten seconds. */
+  private scheduleSip(now: number): void {
+    if (!this.canSip()) {
+      this.nextSipAt = 0;
+      return;
+    }
+    // The first sip comes a few seconds after they sit down with the mug.
+    if (!this.nextSipAt) this.nextSipAt = now + 3000;
+    if (now >= this.nextSipAt && !this.sipping) this.sip();
+  }
+
+  /** Lift the mug to their mouth for a moment (also used by previews). */
+  sip(): void {
+    if (!this.canSip() || this.sipping) return;
+    this.sipping = true;
+    this.nextSipAt = Date.now() + SIP_EVERY_MS;
+    this.drawBody(Date.now());
+    this.updateClasses(Date.now());
+    window.setTimeout(() => {
+      this.sipping = false;
+      this.drawBody(Date.now());
+      this.updateClasses(Date.now());
+    }, SIP_MS);
   }
 }

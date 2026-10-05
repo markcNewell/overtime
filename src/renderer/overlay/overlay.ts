@@ -48,6 +48,7 @@ function applyMockUi(view: SceneView, ui: OverlayUi, m: MockUi): void {
   const tip = m.tip;
   // Menu buttons fan out over ~0.3 s; place the tooltip once they land.
   if (tip) window.setTimeout(() => ui.previewTip(tip), m.menu ? 450 : 0);
+  if (m.sipAt !== undefined) window.setTimeout(() => view.sip(), m.sipAt);
   const effect = m.effect;
   if (effect) window.setTimeout(() => view.effect(effect, true), m.effectAt ?? 0);
 }

@@ -110,8 +110,21 @@ body.preview-bg-light {
 #screen-squiggle,
 #screen-red,
 #screen-dim,
-#coffee-steam {
+#coffee-steam,
+#coffee-brew,
+#desk-coffee {
   display: none;
+}
+#scene.brewing #coffee-brew,
+#scene.drinking:not(.sipping) #desk-coffee {
+  display: inline;
+}
+.brew-stream {
+  stroke-dasharray: 2 1.4;
+  animation: pour 0.35s linear infinite;
+}
+@keyframes pour {
+  to { stroke-dashoffset: -3.4; }
 }
 
 #scene.no-worker #hiring-sign,
@@ -125,7 +138,7 @@ body.preview-bg-light {
 #scene.has-project #screen-code,
 #scene.has-project #screen-progress,
 #scene.has-worker:not(.has-project) #screen-idle,
-#scene.act-coffee #coffee-steam {
+#scene.brewing #coffee-steam {
   display: inline;
 }
 #scene.has-worker #screen-off {
@@ -167,7 +180,7 @@ body.preview-bg-light {
   50% { transform: translateY(-3px); }
 }
 
-#scene.act-coffee #coffee-light {
+#scene.brewing #coffee-light {
   fill: #ffa53d;
   animation: blink 0.7s steps(1) infinite;
 }
@@ -184,6 +197,11 @@ body.preview-bg-light {
 }
 .steam path:nth-child(3) {
   animation-delay: -1.2s;
+}
+/* A faint dark edge keeps white steam visible over pale or busy wallpaper. */
+.steam,
+.p-steam {
+  filter: drop-shadow(0 0 0.7px rgba(42, 34, 56, 0.7));
 }
 @keyframes steam {
   0% { transform: translateY(2px); opacity: 0; }
@@ -360,7 +378,7 @@ body.preview-bg-light {
 #monitor { transform-origin: 298px 247px; }
 #keyboard { transform-origin: 234px 260px; }
 #clipboard { transform-origin: 354px 246px; }
-#left-mug { transform-origin: 306px 257px; }
+#left-mug { transform-origin: 308px 257px; }
 #left-folder { transform-origin: 327px 253px; }
 @keyframes fly-monitor {
   0% { transform: none; }
@@ -700,6 +718,32 @@ body.preview-bg-light {
 .worker.seg-frazzled .worker-shake {
   animation: tremble 0.12s linear infinite;
 }
+.pose-walk.arms-carry .p-arm-far {
+  animation: arm-a 0.52s ease-in-out infinite;
+}
+.arms-make .p-arm-near {
+  animation: press 0.7s ease-in-out infinite alternate;
+}
+@keyframes press {
+  from { transform: rotate(-5deg); }
+  to { transform: rotate(4deg); }
+}
+/* Asking for coffee: the second ask sweats, the third trembles. */
+.worker.ask-nervous .fx-sweat {
+  display: inline;
+}
+.worker.ask-nervous .worker-shake {
+  animation: fidget 1.6s ease-in-out infinite;
+}
+.worker.ask-desperate .worker-shake {
+  animation: tremble 0.11s linear infinite;
+}
+@keyframes fidget {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-1px); }
+  40% { transform: translateX(1px); }
+  60% { transform: translateX(-0.6px); }
+}
 .arms-scratch .p-arm-near {
   animation: scratch 0.28s ease-in-out infinite alternate;
 }
@@ -819,6 +863,7 @@ body.preview-bg-light {
 .bubble,
 .card,
 .tip,
+.ask,
 .desk-chat {
   position: absolute;
   left: 0;
@@ -1086,6 +1131,48 @@ body.preview-bg-light {
 }
 @keyframes pop-in {
   from { transform: scale(0.85); opacity: 0; }
+}
+
+/* "Can I get a coffee?": two little answer buttons beside their face. */
+.ask {
+  display: flex;
+  gap: 4px;
+  animation: pop-in 0.15s ease-out;
+}
+.ask button {
+  height: 22px;
+  padding: 0 9px;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  font: 800 10.5px var(--font);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--line), 0 0 0 2px rgba(255, 255, 255, 0.7);
+  transition: transform 0.08s;
+}
+.ask button:hover {
+  transform: translateY(-1px) scale(1.06);
+}
+.ask button:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 var(--line), 0 0 0 2px rgba(255, 255, 255, 0.7);
+}
+.ask-yes {
+  background: #9be8a6;
+  color: var(--line);
+}
+.ask-no {
+  background: #ffffff;
+  color: #b3261e;
+}
+/* By the third ask the buttons shiver along with them. */
+.ask.nervous .ask-yes {
+  animation: ask-plead 1.2s ease-in-out infinite;
+}
+@keyframes ask-plead {
+  0%, 70%, 100% { transform: none; }
+  80% { transform: rotate(-3deg) scale(1.06); }
+  90% { transform: rotate(3deg) scale(1.06); }
 }
 
 /* Desk chat: one line beside the worker's head. */

@@ -4,14 +4,22 @@ A tiny cartoon developer who lives in the bottom-right corner of your screen,
 building apps nobody needs. Their brain is your Claude subscription. You're the
 boss.
 
-- **Click them** to give them an electric shock. They work faster, briefly. They
-  remember.
-- **The clipboard on their desk** opens the boss menu: chat, coffee, praise,
-  shout, bonus (once a day), fire.
+- **Click them** to give them an electric shock. It gets them back to work
+  (wakes them up, drags them back from the coffee machine). They remember.
+- **Click their monitor** to mess up their code. A bug appears out of nowhere,
+  they get stuck on it, and after a few they start getting paranoid.
+- **The clipboard on their desk** fans out the boss menu: chat, coffee, praise,
+  shout, bonus (once a day), mess up code, fire, and the office.
+- **Chat on the desk.** Type in the little box by their head; they answer in a
+  speech bubble and their face reacts. Tell them to take a break and they will.
+- **The office** pops up as a small panel next to them: hire (one candidate at
+  a time), pick projects, their staff file, the chat log, settings.
 - **Pick their projects.** Every idea comes with a brief in
   `Documents/Overtime/pitches/` listing where the developer will struggle. Edit
   that list before assigning it and they'll struggle there instead. Give a junior
   a Nightmare project and watch what happens.
+- **They take breaks.** They ask for coffee when they're flagging and go anyway
+  if you ignore them, unless they're too scared of you to dare.
 - **They break.** Lose their mind, get fried, rage-quit, or get fired. Then you
   hire someone new, and they find the last one's mug on the desk.
 

@@ -9,6 +9,7 @@ import {
   stripFences,
   text,
 } from '../src/brain/parse';
+import { toMugText } from '../src/brain/validate';
 
 describe('extractJson', () => {
   it('parses a bare object', () => {
@@ -155,5 +156,18 @@ describe('asList', () => {
     expect(asList({ whatever: [3] }, ['pitches'])).toEqual([3]);
     expect(asList({ a: 1 }, ['pitches'])).toEqual([]);
     expect(asList('nope', ['pitches'])).toEqual([]);
+  });
+});
+
+
+describe('toMugText', () => {
+  it('does not leave a slogan hanging mid-bracket', () => {
+    expect(toMugText('Medieval Tax Collector. Send Help. (Or Bring Snacks.)')).toBe(
+      'Medieval Tax Collector. Send Help.',
+    );
+  });
+
+  it('keeps short slogans as they are', () => {
+    expect(toMugText("World's okayest dev")).toBe("World's okayest dev");
   });
 });

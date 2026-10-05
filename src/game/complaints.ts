@@ -43,6 +43,19 @@ const CONSEQUENCES: Record<ComplaintOutcome, Consequence> = {
   },
 };
 
+/**
+ * What a complaint is about, for memories: "Formal Complaint: The Shocks"
+ * becomes "the shocks".
+ */
+function topic(subject: string): string {
+  const bare = subject
+    .trim()
+    .replace(/^((re|fw|fwd):\s*|(formal\s+)?complaint\s*(re|about)?\s*[:\-–]?\s*)+/i, '')
+    .trim()
+    .toLowerCase();
+  return bare || 'what happened';
+}
+
 /** Unanswered for this long (app-open minutes) and the complaint is ignored. */
 export const COMPLAINT_IGNORED_MINUTES = 30;
 
@@ -70,7 +83,7 @@ export function ageComplaints(
     if (c.openMinutes < COMPLAINT_IGNORED_MINUTES) continue;
     c.ignoredAt = now;
     nudge(worker.stats, { mood: -6, sanity: -4 });
-    const text = `Nobody answered my complaint about ${c.subject.toLowerCase()}. The whole company is against me.`;
+    const text = `Nobody answered my complaint about ${topic(c.subject)}. The whole company is against me.`;
     worker.memories = addMemory(worker, { at: now, kind: 'self', text }).memories;
     events.push({ type: 'complaint-ignored', id: c.id });
   }
@@ -99,7 +112,7 @@ export function resolveComplaint(
   nudge(worker.stats, c.stats);
   worker.ledger.kindChats += c.kindChats ?? 0;
   worker.ledger.cruelChats += c.cruelChats ?? 0;
-  const about = subject.trim().toLowerCase() || 'what happened';
+  const about = topic(subject);
   next.worker = addMemory(worker, { at: now, ...c.memory(about) });
   refreshAttitude(next.worker, events);
   return { state: next, events };

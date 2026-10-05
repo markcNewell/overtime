@@ -472,7 +472,21 @@ export function parseChatReply(
  */
 export function toMugText(x: unknown): string {
   const words = cleanLine(x, 60).split(/\s+/).filter(Boolean);
-  return str(words.slice(0, 6).join(' '), 48);
+  const text = words.slice(0, 6).join(' ');
+  return str(words.length > 6 ? tidyCut(text) : text, 48);
+}
+
+/**
+ * A slogan cut short shouldn't end mid-aside: drop an unclosed bracket and
+ * any dangling words after the last full sentence.
+ */
+function tidyCut(text: string): string {
+  let out = text;
+  const open = out.lastIndexOf('(');
+  if (open > 0 && !out.slice(open).includes(')')) out = out.slice(0, open).trim();
+  const stop = Math.max(out.lastIndexOf('.'), out.lastIndexOf('!'), out.lastIndexOf('?'));
+  if (stop > 0 && stop < out.length - 1) out = out.slice(0, stop + 1);
+  return out;
 }
 
 /**

@@ -99,3 +99,17 @@ describe('resolveComplaint', () => {
   });
 });
 
+
+describe('complaint memories', () => {
+  it('strip the email subject prefix', () => {
+    const { state } = resolveComplaint(
+      withWorker(),
+      'unconvinced',
+      'Formal Complaint: Unsafe and Hostile Work Environment',
+      10,
+    );
+    expect(state.worker!.memories.at(-1)?.text).toBe(
+      'The boss brushed off my complaint about unsafe and hostile work environment',
+    );
+  });
+});

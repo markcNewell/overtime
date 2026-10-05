@@ -52,7 +52,8 @@ export function describeCondition(state: GameState): string[] {
     bandWord(SANITY_WORDS, sanity),
     activityWord(worker, state.project),
     overloadWord(worker, state.project),
-    worker.wantsCoffeeSince !== undefined ? 'desperate for coffee' : undefined,
+    worker.wantsCoffeeSince !== undefined ? 'nervously asking for a coffee' : undefined,
+    (worker.drinkingFor ?? 0) > 0 ? 'sipping a fresh coffee' : undefined,
     worker.boost && worker.boost.until > state.lastTickAt ? 'rushing' : undefined,
     ATTITUDE_WORDS[worker.attitude],
   ];
@@ -81,7 +82,7 @@ function activityWord(worker: Worker, project: Project | undefined): string | un
       return part ? `stuck on: ${part.title}` : 'stuck';
     }
     case 'coffee':
-      return 'on a coffee break';
+      return 'making a coffee';
     case 'asleep':
       return 'asleep at the desk';
     case 'leaving':

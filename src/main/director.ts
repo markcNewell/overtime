@@ -154,6 +154,8 @@ export class Director {
   private busy = false;
   private offline = false;
   private filingComplaint = false;
+  /** An important line that arrived while another was being written. */
+  private queuedLine: string | undefined;
   /** Bugs planted while they were away, announced when they come back. */
   private readonly unnoticedBugs = new Set<string>();
 
@@ -206,7 +208,7 @@ export class Director {
   tick(): void {
     const now = this.deps.now();
     const before = this.state;
-    const { state, events } = game.tick(this.state, now);
+    const { state, events } = game.tick(this.state, now, this.deps.random);
     this.state = state;
     this.handleEvents(events, before);
     this.maybeFinishEnding(now);
@@ -263,12 +265,15 @@ export class Director {
         this.ensureWork();
         this.commit(true);
         return;
-      case 'wants-coffee':
+      case 'wants-coffee': {
+        const courage = event.attempt >= 3 ? ', and you are building up the courage to just go' : '';
         void this.speak(
-          'You are running on empty. Ask the boss if you can grab a coffee.',
+          "You'd like a coffee but you're scared of your boss. Ask permission " +
+            `(attempt ${event.attempt} of 3${courage}).`,
           true,
         );
         return;
+      }
       case 'complaint-ignored':
         void this.speak(
           'Nobody has answered your HR complaint. You are now convinced the whole ' +
@@ -278,8 +283,8 @@ export class Director {
         return;
       case 'took-break':
         void this.speak(
-          'You decided you have earned a short break and are heading to the ' +
-            'coffee machine.',
+          "The coffee timer went off: you're heading to make a coffee. Announce " +
+            'it casually, and maybe tell the boss to stretch their legs too.',
           true,
         );
         return;
@@ -301,7 +306,7 @@ export class Director {
       }
       case 'took-coffee-anyway':
         void this.speak(
-          'Nobody answered, so you are taking a coffee break anyway.',
+          'Nobody answered, so you finally worked up the courage to make a coffee anyway.',
           true,
         );
         return;
@@ -357,7 +362,7 @@ export class Director {
 
   act(action: DirectAction): void {
     const now = this.deps.now();
-    const { state, events } = game.act(this.state, action, now);
+    const { state, events } = game.act(this.state, action, now, this.deps.random);
     this.state = state;
     this.handleEvents(events, state);
     const refused = events.some((e) => e.type === 'action-refused');
@@ -391,6 +396,9 @@ export class Director {
       case 'coffee':
         void this.speak('Your boss just sent you for a coffee break.', true);
         return;
+      case 'deny-coffee':
+        void this.speak('Your boss said no to your coffee. React.', true);
+        return;
       case 'fire':
       case 'sabotage':
         // The ending and the broken code each have their own reaction.
@@ -417,6 +425,7 @@ export class Director {
       this.state,
       { type: 'chat', tone: reply.tone, request: reply.action },
       now,
+      this.deps.random,
     );
     this.state = result.state;
     this.handleEvents(result.events, result.state);
@@ -432,7 +441,7 @@ export class Director {
   hire(candidateId: string): void {
     if (this.state.worker) return;
     const now = this.deps.now();
-    this.state = game.hire(this.state, candidateId, now);
+    this.state = game.hire(this.state, candidateId, now, this.deps.random);
     const name = this.state.worker?.name ?? 'Someone';
     this.addChat('system', `${name} has joined the company.`);
     this.ensureWork();
@@ -711,7 +720,13 @@ export class Director {
    */
   private async speak(situation: string, important = false): Promise<void> {
     const worker = this.state.worker;
-    if (!worker || this.lineInFlight) return;
+    if (!worker) return;
+    if (this.lineInFlight) {
+      // Two big moments at once (sitting down, then asking for coffee): keep
+      // the latest important one for when Claude is free, drop small talk.
+      if (important) this.queuedLine = situation;
+      return;
+    }
     const now = this.deps.now();
     if (!important && now - this.lastEventLineAt < EVENT_LINE_GAP_MS) return;
     this.lineInFlight = true;
@@ -726,6 +741,9 @@ export class Director {
       this.log('Worker line failed', err);
     } finally {
       this.lineInFlight = false;
+      const next = this.queuedLine;
+      this.queuedLine = undefined;
+      if (next) void this.speak(next, true);
     }
   }
 

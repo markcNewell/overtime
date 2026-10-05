@@ -126,11 +126,16 @@ describe('hire', () => {
       recentShocks: [],
       recentPraises: [],
       recentSabotages: [],
-      minutesSinceBreak: 0,
+      coffeeTimer: 25,
       lowMoodMinutes: 0,
     });
     expect(Object.values(w.ledger).every((n) => n === 0)).toBe(true);
     expect(state.candidates).toEqual([]);
+  });
+
+  it('winds the first coffee timer to 20-30 minutes', () => {
+    expect(hire(shortlist(), 'c2', T0, () => 0).worker!.coffeeTimer).toBe(20);
+    expect(hire(shortlist(), 'c2', T0, () => 0.99).worker!.coffeeTimer).toBeCloseTo(29.9);
   });
 
   it('finds what the last worker left on the desk', () => {
@@ -275,23 +280,29 @@ describe('retire', () => {
 });
 
 describe('goHome', () => {
-  it('rests them, clears breaks and boosts, and wakes them', () => {
+  it('rests them, clears coffee and boosts, and wakes them', () => {
     const tired = hiredWith({
       activity: 'asleep',
       stats: { energy: 10, mood: 15, sanity: 40 },
       boost: { multiplier: 1.3, until: T0 + 5 * MIN },
       wantsCoffeeSince: T0 - MIN,
-      minutesSinceBreak: 50,
+      coffeeAsks: 2,
+      nextAskIn: 1,
+      drinkingFor: 3,
+      coffeeTimer: 0,
     });
     const later = T0 + 14 * 60 * MIN;
-    const state = goHome(tired, later);
+    const state = goHome(tired, later, () => 0.1);
     const w = state.worker!;
     expect(w.stats.energy).toBe(70);
     expect(w.stats.mood).toBeCloseTo(15 + (55 - 15) * 0.3, 6);
     expect(w.stats.sanity).toBe(45);
     expect(w.boost).toBeUndefined();
     expect(w.wantsCoffeeSince).toBeUndefined();
-    expect(w.minutesSinceBreak).toBe(0);
+    expect(w.coffeeAsks).toBeUndefined();
+    expect(w.nextAskIn).toBeUndefined();
+    expect(w.drinkingFor).toBeUndefined();
+    expect(w.coffeeTimer).toBeCloseTo(21, 9);
     expect(w.activity).toBe('idle');
     expect(state.lastTickAt).toBe(later);
   });

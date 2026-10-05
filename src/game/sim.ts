@@ -19,10 +19,13 @@ import { gapFor, grade, levelFor, levelRank } from './levels';
 import { hitHardPart, nextHardPart } from './project';
 import {
   ARRIVE_MS,
-  BREAK_EVERY_MINUTES,
-  COFFEE_ASK_ENERGY,
-  COFFEE_IGNORED_MINUTES,
-  COFFEE_REFILL,
+  COFFEE_ASK_EVERY_MINUTES,
+  COFFEE_DRINKING_ENERGY,
+  COFFEE_DRINKING_MINUTES,
+  COFFEE_DRINKING_MOOD,
+  COFFEE_MAKING_ENERGY,
+  COFFEE_MAX_ASKS,
+  COFFEE_TIMER_FALLBACK,
   IDLE_DRAIN,
   MAX_TICK_MINUTES,
   MOOD_DRIFT,
@@ -36,13 +39,16 @@ import {
 } from './tuning';
 import {
   boostAt,
+  MIDDLE_RNG,
   nudge,
   pruneRecent,
   refreshAttitude,
+  restartCoffeeTimer,
   resume,
-  startCoffee,
+  startCoffeeRun,
   startEnding,
   withMemory,
+  type Rng,
 } from './worker';
 
 /** Slack for float sums of sub-steps, so a 20-minute timer ends at 20. */
@@ -57,6 +63,7 @@ interface Step {
   /** Epoch ms at the end of the slice. */
   t: number;
   events: GameEvent[];
+  rng: Rng;
 }
 
 /**
@@ -68,11 +75,13 @@ interface Step {
  *
  * @param state - The current state (not changed).
  * @param now - Epoch ms.
+ * @param rng - Randomness for the coffee timer; the app passes Math.random.
  * @returns The new state and what happened.
  */
 export function tick(
   state: GameState,
   now: number,
+  rng: Rng = MIDDLE_RNG,
 ): { state: GameState; events: GameEvent[] } {
   const next = structuredClone(state);
   const events: GameEvent[] = [];
@@ -87,7 +96,7 @@ export function tick(
   const start = now - minutes * MS_PER_MINUTE;
   for (let i = 1; i <= count; i++) {
     const t = i === count ? now : start + (i / count) * minutes * MS_PER_MINUTE;
-    step({ state: next, worker, minutes: minutes / count, t, events });
+    step({ state: next, worker, minutes: minutes / count, t, events, rng });
     if (hasLeft(worker)) break;
   }
   if (!hasLeft(worker)) ageComplaints(next, worker, minutes, now, events);
@@ -107,11 +116,14 @@ function step(s: Step): void {
     stepArriving(s);
     return;
   }
+  // The slice they walk back from the machine was spent at the machine.
+  const wasAtDesk = AT_DESK.has(s.worker.activity);
   ACTIVITY_STEPS[s.worker.activity]?.(s);
+  if (wasAtDesk) sipCoffee(s);
   updateMood(s);
   updateSanity(s);
   fallAsleepIfSpent(s);
-  handleBreaks(s);
+  if (wasAtDesk) runCoffeeClock(s);
   refreshAttitude(s.worker, s.events);
   checkEndings(s);
 }
@@ -129,17 +141,34 @@ function stepArriving(s: Step): void {
   s.events.push({ type: 'arrived' });
 }
 
+/** At the machine making it; then back to the desk with a full mug. */
 function stepCoffee(s: Step): void {
   const { worker } = s;
   const until = worker.coffeeUntil ?? s.t;
   const stepStart = s.t - s.minutes * MS_PER_MINUTE;
-  // Only refill for the part of the slice still inside the break.
-  const sipMinutes = clamp((until - stepStart) / MS_PER_MINUTE, 0, s.minutes);
-  nudge(worker.stats, { energy: COFFEE_REFILL * sipMinutes });
+  // Only count the part of the slice still at the machine.
+  const making = clamp((until - stepStart) / MS_PER_MINUTE, 0, s.minutes);
+  nudge(worker.stats, { energy: COFFEE_MAKING_ENERGY * making });
   if (s.t < until) return;
   delete worker.coffeeUntil;
+  worker.drinkingFor = COFFEE_DRINKING_MINUTES;
+  restartCoffeeTimer(worker, s.rng);
   resume(worker, s.state.project, s.t);
   s.events.push({ type: 'coffee-done' });
+}
+
+/** Sipping at the desk: they work as normal and perk up. */
+function sipCoffee(s: Step): void {
+  const { worker } = s;
+  const left = worker.drinkingFor ?? 0;
+  if (left <= 0 || !AT_DESK.has(worker.activity)) return;
+  const sip = Math.min(left, s.minutes);
+  nudge(worker.stats, {
+    energy: COFFEE_DRINKING_ENERGY * sip,
+    mood: COFFEE_DRINKING_MOOD * sip,
+  });
+  worker.drinkingFor = left - sip;
+  if (worker.drinkingFor <= EPSILON) delete worker.drinkingFor;
 }
 
 function stepWorking(s: Step): void {
@@ -196,14 +225,12 @@ function stepStuck(s: Step): void {
   s.events.push({ type: 'hard-part-cleared', index });
 }
 
-/** Score the minute's quality, pay for it in energy, run the break clock. */
+/** Score the minute's quality and pay for it in energy. */
 function doDeskWork(s: Step, project: Project, gap: number): void {
   const { worker } = s;
   const rushed = boostAt(worker, s.t) > 1;
   project.qualitySum += minuteQuality(gap, worker.stats, rushed) * s.minutes;
   project.workMinutes += s.minutes;
-  // Saves from before breaks existed have no clock yet.
-  worker.minutesSinceBreak = (worker.minutesSinceBreak ?? 0) + s.minutes;
   const drain = workDrain(project.difficulty, worker.traits.stamina);
   nudge(worker.stats, { energy: -drain * s.minutes });
 }
@@ -264,7 +291,7 @@ function updateSanity(s: Step): void {
   nudge(stats, { sanity: sanityRate(stats.mood, traits.resilience) * s.minutes });
 }
 
-/** At the desk and awake: the only states that tire, doze or crave coffee. */
+/** At the desk and awake: the only states that tire, doze or run the coffee clock. */
 const AT_DESK = new Set<Worker['activity']>(['working', 'stuck', 'idle']);
 
 function fallAsleepIfSpent(s: Step): void {
@@ -276,37 +303,49 @@ function fallAsleepIfSpent(s: Step): void {
 }
 
 /**
- * Breaks they arrange themselves: ask for coffee when tired and go anyway
- * if ignored, and take a break every so often. Scared workers don't dare.
+ * The coffee timer runs while they're at the desk. When it goes off they
+ * just go, unless they're scared of the boss: then they ask, up to three
+ * times a few minutes apart, and go anyway if nobody answers.
  */
-function handleBreaks(s: Step): void {
+function runCoffeeClock(s: Step): void {
   const { worker } = s;
   if (!AT_DESK.has(worker.activity)) return;
-  askForCoffee(s);
-  if (worker.attitude === 'scared') return;
-  if (coffeeIgnored(s)) {
-    startCoffee(worker, s.t);
-    s.events.push({ type: 'took-coffee-anyway' });
+  if (worker.wantsCoffeeSince !== undefined) {
+    waitForAnswer(s);
     return;
   }
-  const due = BREAK_EVERY_MINUTES / worker.traits.stamina;
-  if ((worker.minutesSinceBreak ?? 0) < due - EPSILON) return;
-  startCoffee(worker, s.t);
+  // Saves from before the timer existed start it mid-range.
+  const left = (worker.coffeeTimer ?? COFFEE_TIMER_FALLBACK) - s.minutes;
+  worker.coffeeTimer = Math.max(0, left);
+  if (left > EPSILON) return;
+  if (worker.attitude === 'scared') {
+    ask(s, 1);
+    return;
+  }
+  startCoffeeRun(worker, s.t);
   s.events.push({ type: 'took-break' });
 }
 
-function askForCoffee(s: Step): void {
+function ask(s: Step, attempt: number): void {
   const { worker } = s;
-  if (worker.wantsCoffeeSince !== undefined) return;
-  if (worker.stats.energy >= COFFEE_ASK_ENERGY) return;
-  worker.wantsCoffeeSince = s.t;
-  s.events.push({ type: 'wants-coffee' });
+  worker.wantsCoffeeSince ??= s.t;
+  worker.coffeeAsks = attempt;
+  worker.nextAskIn = COFFEE_ASK_EVERY_MINUTES;
+  s.events.push({ type: 'wants-coffee', attempt });
 }
 
-function coffeeIgnored(s: Step): boolean {
-  const since = s.worker.wantsCoffeeSince;
-  if (since === undefined) return false;
-  return (s.t - since) / MS_PER_MINUTE >= COFFEE_IGNORED_MINUTES;
+function waitForAnswer(s: Step): void {
+  const { worker } = s;
+  const left = (worker.nextAskIn ?? COFFEE_ASK_EVERY_MINUTES) - s.minutes;
+  worker.nextAskIn = Math.max(0, left);
+  if (left > EPSILON) return;
+  const asks = worker.coffeeAsks ?? 1;
+  if (asks < COFFEE_MAX_ASKS) {
+    ask(s, asks + 1);
+    return;
+  }
+  startCoffeeRun(worker, s.t);
+  s.events.push({ type: 'took-coffee-anyway' });
 }
 
 function checkEndings(s: Step): void {

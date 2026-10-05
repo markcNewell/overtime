@@ -66,7 +66,7 @@ function worker(now: number): Worker {
     hiredAt: now - 30 * HOUR,
     stats: { energy: 38, mood: 52, sanity: 71 },
     xp: 61,
-    ledger: { shocks: 7, shouts: 2, praises: 4, bonuses: 1, kindChats: 3, cruelChats: 1, coffees: 5, sabotages: 2 },
+    ledger: { shocks: 7, shouts: 2, praises: 4, bonuses: 1, kindChats: 3, cruelChats: 1, coffees: 5, sabotages: 2, coffeeDenials: 1 },
     attitude: 'neutral',
     memories: [
       { at: now - 26 * HOUR, kind: 'desk', text: "Found a mug from Dave: 'World's okayest dev'" },
@@ -79,7 +79,7 @@ function worker(now: number): Worker {
     recentShocks: [],
     recentPraises: [],
     recentSabotages: [],
-    minutesSinceBreak: 20,
+    coffeeTimer: 12,
     lowMoodMinutes: 0,
   };
 }

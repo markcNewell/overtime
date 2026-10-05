@@ -54,6 +54,7 @@ const ACTIONS: DirectAction['type'][] = [
   'bonus',
   'fire',
   'sabotage',
+  'deny-coffee',
 ];
 
 const files: FilesLike = {

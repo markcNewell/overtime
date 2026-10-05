@@ -86,27 +86,37 @@ interface Run {
   grade?: string;
   ending?: string;
   endedAt?: number;
+  asleepAt?: number;
+  minEnergy: number;
   events: GameEvent[];
+}
+
+interface Boss {
+  /** How the boss answers a scared worker asking for coffee. */
+  answer: 'yes' | 'no' | 'ignore';
+  shockEveryMinutes?: number;
+  limitMinutes?: number;
+  stopOnSleep?: boolean;
 }
 
 /**
  * Tick every 5 s until the project ships, an ending starts or the limit
  * passes, reacting to events like a boss would.
  */
-function simulate(
-  start: GameState,
-  opts: { coffee: boolean; shockEveryMinutes?: number; limitMinutes?: number },
-): Run {
+function simulate(start: GameState, boss: Boss): Run {
   let state = start;
-  const run: Run = { events: [] };
-  const limit = T0 + (opts.limitMinutes ?? 12 * 60) * MIN;
-  let nextShock = opts.shockEveryMinutes ? T0 + opts.shockEveryMinutes * MIN : Infinity;
+  const run: Run = { events: [], minEnergy: 100 };
+  const limit = T0 + (boss.limitMinutes ?? 12 * 60) * MIN;
+  const every = boss.shockEveryMinutes;
+  let nextShock = every ? T0 + every * MIN : Infinity;
   for (let now = T0 + TICK_MS; now <= limit; now += TICK_MS) {
     const ticked = tick(state, now);
     state = ticked.state;
     const events = [...ticked.events];
-    if (opts.coffee && events.some((e) => e.type === 'wants-coffee')) {
-      const r = act(state, { type: 'coffee' }, now);
+    const asked = events.some((e) => e.type === 'wants-coffee');
+    if (asked && boss.answer !== 'ignore') {
+      const type = boss.answer === 'yes' ? 'coffee' : 'deny-coffee';
+      const r = act(state, { type }, now);
       state = r.state;
       events.push(...r.events);
     }
@@ -114,9 +124,13 @@ function simulate(
       const r = act(state, { type: 'shock' }, now);
       state = r.state;
       events.push(...r.events);
-      nextShock += (opts.shockEveryMinutes ?? 0) * MIN;
+      nextShock += (every ?? 0) * MIN;
     }
     run.events.push(...events);
+    run.minEnergy = Math.min(run.minEnergy, state.worker?.stats.energy ?? 100);
+    const minutes = (now - T0) / MIN;
+    if (events.some((e) => e.type === 'fell-asleep')) run.asleepAt ??= minutes;
+    if (boss.stopOnSleep && run.asleepAt !== undefined) return run;
     for (const e of events) {
       if (e.type === 'project-finished') {
         return { ...run, minutes: (now - T0) / MIN, quality: e.quality, grade: e.grade };
@@ -140,19 +154,24 @@ describe('project duration for a sensible pairing', () => {
   for (const [level, difficulty] of PAIRINGS) {
     for (const parts of [2, 3]) {
       it(`${level} on d${difficulty} with ${parts} hard parts takes 1-3.5 h`, () => {
-        const run = simulate(startProject(level, difficulty, parts), { coffee: true });
+        const run = simulate(startProject(level, difficulty, parts), { answer: 'yes' });
         expect(run.ending).toBeUndefined();
         expect(run.minutes).toBeGreaterThanOrEqual(60);
         expect(run.minutes).toBeLessThanOrEqual(210);
+        // A coffee run every 20-30 minutes keeps them going.
+        const breaks = run.events.filter((e) => e.type === 'took-break');
+        expect(breaks.length).toBeGreaterThan(1);
+        expect(run.minEnergy).toBeGreaterThan(50);
+        expect(run.asleepAt).toBeUndefined();
       });
     }
   }
 });
 
 describe('the mismatch', () => {
-  it('a junior on difficulty 5 without coffee ships much worse work', () => {
-    const good = simulate(startProject('junior', 1, 3), { coffee: true });
-    const bad = simulate(startProject('junior', 5, 3), { coffee: false });
+  it('a junior on difficulty 5 ships much worse work', () => {
+    const good = simulate(startProject('junior', 1, 3), { answer: 'yes' });
+    const bad = simulate(startProject('junior', 5, 3), { answer: 'ignore' });
     expect(bad.ending).toBeUndefined();
     expect(bad.quality).toBeDefined();
     expect(good.quality! - bad.quality!).toBeGreaterThan(0.2);
@@ -161,11 +180,35 @@ describe('the mismatch', () => {
 
   it('a junior on difficulty 5 shocked every few minutes ends within a day', () => {
     const run = simulate(startProject('junior', 5, 3), {
-      coffee: false,
+      answer: 'ignore',
       shockEveryMinutes: 3,
       limitMinutes: DAY_MINUTES,
     });
     expect(run.ending).toBeDefined();
     expect(run.endedAt).toBeLessThanOrEqual(DAY_MINUTES);
+  });
+});
+
+describe('a scared worker', () => {
+  function scared(): GameState {
+    const state = startProject('lead', 5, 3);
+    const worker = state.worker!;
+    const ledger = { ...worker.ledger, shocks: 3 };
+    return { ...state, worker: { ...worker, ledger, attitude: 'scared' } };
+  }
+
+  it('always denied coffee runs down and falls asleep within a few hours', () => {
+    const run = simulate(scared(), { answer: 'no', stopOnSleep: true });
+    expect(run.asleepAt).toBeDefined();
+    expect(run.asleepAt).toBeLessThanOrEqual(4 * 60);
+    expect(run.events.filter((e) => e.type === 'coffee-done')).toEqual([]);
+  });
+
+  it('ignored, they go anyway and keep their energy up', () => {
+    const run = simulate(scared(), { answer: 'ignore' });
+    expect(run.minutes).toBeDefined();
+    expect(run.events.map((e) => e.type)).toContain('took-coffee-anyway');
+    expect(run.events.map((e) => e.type)).not.toContain('took-break');
+    expect(run.minEnergy).toBeGreaterThan(50);
   });
 });

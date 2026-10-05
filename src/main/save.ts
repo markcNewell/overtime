@@ -58,9 +58,13 @@ function withDefaults(state: GameState, settings: Settings): GameState {
 function workerWithDefaults(worker: Worker): Worker {
   return {
     ...worker,
-    ledger: { ...worker.ledger, sabotages: worker.ledger.sabotages ?? 0 },
+    ledger: {
+      ...worker.ledger,
+      sabotages: worker.ledger.sabotages ?? 0,
+      coffeeDenials: worker.ledger.coffeeDenials ?? 0,
+    },
     recentSabotages: worker.recentSabotages ?? [],
-    minutesSinceBreak: worker.minutesSinceBreak ?? 0,
+    coffeeTimer: worker.coffeeTimer ?? 25,
   };
 }
 

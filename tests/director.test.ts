@@ -391,5 +391,52 @@ describe('Director', () => {
     t.director.stop();
     expect(t.director.getState().complaints).toHaveLength(0);
   });
+
+  it('the coffee timer sends a relaxed worker for coffee by announcing it', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    const before = t.calls.think.length;
+    // random() is 0.5 in these tests, so the timer is 25 minutes.
+    for (let i = 0; i < 26 * 12; i++) {
+      t.advance(5_000);
+      t.director.tick();
+      await settle();
+      if (t.director.getState().worker?.activity === 'coffee') break;
+    }
+    t.director.stop();
+    expect(t.director.getState().worker?.activity).toBe('coffee');
+    expect(t.calls.think.slice(before).some((s) => s.startsWith('The coffee timer went off'))).toBe(
+      true,
+    );
+  });
+
+  it('a scared worker asks first, and saying no keeps them at the desk', async () => {
+    const t = setup();
+    await hiredAndWorking(t);
+    const s0 = t.director.getState();
+    // Enough shocks on record to be terrified of the boss.
+    (t.director as unknown as { state: GameState }).state = {
+      ...s0,
+      worker: {
+        ...s0.worker!,
+        attitude: 'scared',
+        ledger: { ...s0.worker!.ledger, shocks: 10 },
+        coffeeTimer: 0.1,
+      },
+    };
+    t.advance(60_000);
+    t.director.tick();
+    await settle();
+    expect(t.director.getState().worker?.wantsCoffeeSince).toBeDefined();
+    expect(t.calls.think.some((s) => s.startsWith("You'd like a coffee"))).toBe(true);
+    t.director.act({ type: 'deny-coffee' });
+    await settle();
+    t.director.stop();
+    const w = t.director.getState().worker!;
+    expect(w.wantsCoffeeSince).toBeUndefined();
+    expect(w.activity).not.toBe('coffee');
+    expect(w.ledger.coffeeDenials).toBe(1);
+    expect(t.calls.think.some((s) => s.startsWith('Your boss said no to your coffee'))).toBe(true);
+  });
 });
 

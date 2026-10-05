@@ -15,6 +15,7 @@ import {
   BONUS,
   CHAT_CRUEL,
   CHAT_KIND_MOOD,
+  COFFEE_DENIED_MOOD,
   FRY_SHOCKS,
   FRY_WARNING_SHOCKS,
   FRY_WINDOW_MINUTES,
@@ -26,11 +27,16 @@ import {
 import {
   applyBoost,
   backToWork,
+  clearAsk,
+  MIDDLE_RNG,
   nudge,
   pruneRecent,
   refreshAttitude,
-  startCoffee,
+  restartCoffeeTimer,
+  startCoffeeRun,
   startEnding,
+  withdrawAsk,
+  type Rng,
 } from './worker';
 
 /** Everything an action handler needs; it changes `state` in place. */
@@ -39,6 +45,7 @@ interface Ctx {
   worker: Worker;
   now: number;
   events: GameEvent[];
+  rng: Rng;
 }
 
 /**
@@ -51,12 +58,14 @@ interface Ctx {
  * @param state - The current state (not changed).
  * @param action - What the boss did.
  * @param now - Epoch ms.
+ * @param rng - Randomness for the coffee timer; the app passes Math.random.
  * @returns The new state and what happened.
  */
 export function act(
   state: GameState,
   action: BossAction,
   now: number,
+  rng: Rng = MIDDLE_RNG,
 ): { state: GameState; events: GameEvent[] } {
   const next = structuredClone(state);
   const reason = refusal(next, action, now);
@@ -66,7 +75,7 @@ export function act(
     return { state: next, events: [refused(action.type, why)] };
   }
 
-  const ctx: Ctx = { state: next, worker, now, events: [] };
+  const ctx: Ctx = { state: next, worker, now, events: [], rng };
   pruneRecent(worker, now);
   applyAction(ctx, action);
   refreshAttitude(worker, ctx.events);
@@ -94,6 +103,9 @@ function refusal(state: GameState, action: BossAction, now: number): string | un
       if (!state.project) return 'There is no code to mess up yet';
       if (worker.activity === 'arriving') return "They haven't even logged in yet";
       return undefined;
+    case 'deny-coffee':
+      if (worker.wantsCoffeeSince === undefined) return "They haven't asked for one";
+      return undefined;
     default:
       return undefined;
   }
@@ -109,6 +121,8 @@ function applyAction(ctx: Ctx, action: BossAction): void {
       return praise(ctx);
     case 'coffee':
       return coffee(ctx);
+    case 'deny-coffee':
+      return denyCoffee(ctx);
     case 'bonus':
       return bonus(ctx);
     case 'chat':
@@ -132,7 +146,8 @@ function shock(ctx: Ctx): void {
   worker.ledger.shocks += 1;
   worker.recentShocks.push(now);
   nudge(worker.stats, { mood: SHOCK.mood, sanity: SHOCK.sanity });
-  backToWork(worker, ctx.state.project, now, events);
+  backToWork(worker, ctx.state.project, now, events, ctx.rng);
+  withdrawAsk(worker, ctx.rng);
 
   const windowStart = now - FRY_WINDOW_MINUTES * MS_PER_MINUTE;
   const recent = worker.recentShocks.filter((at) => at > windowStart).length;
@@ -148,6 +163,7 @@ function shout(ctx: Ctx): void {
   worker.ledger.shouts += 1;
   applyBoost(worker, SHOUT.multiplier, SHOUT.minutes, now);
   nudge(worker.stats, { mood: SHOUT.mood, sanity: SHOUT.sanity });
+  withdrawAsk(worker, ctx.rng);
 }
 
 function praise(ctx: Ctx): void {
@@ -159,9 +175,19 @@ function praise(ctx: Ctx): void {
   nudge(worker.stats, { mood: PRAISE_MOOD / 2 ** already });
 }
 
+/** Off to make a coffee now; the timer restarts when they're back. */
 function coffee(ctx: Ctx): void {
   ctx.worker.ledger.coffees += 1;
-  startCoffee(ctx.worker, ctx.now);
+  startCoffeeRun(ctx.worker, ctx.now);
+}
+
+function denyCoffee(ctx: Ctx): void {
+  const { worker } = ctx;
+  clearAsk(worker);
+  restartCoffeeTimer(worker, ctx.rng);
+  // Saves from before denials existed have no count yet.
+  worker.ledger.coffeeDenials = (worker.ledger.coffeeDenials ?? 0) + 1;
+  nudge(worker.stats, { mood: COFFEE_DENIED_MOOD });
 }
 
 /** Can a coffee break start without being refused? */
@@ -190,6 +216,8 @@ function chat(ctx: Ctx, tone: ChatTone, request: ChatRequest | undefined): void 
     nudge(worker.stats, { mood: CHAT_CRUEL.mood, sanity: CHAT_CRUEL.sanity });
   }
   if (request === 'coffee' && canTakeCoffee(worker)) coffee(ctx);
+  if (request !== 'work') return;
   // Like a shock, minus the pain.
-  if (request === 'work') backToWork(worker, ctx.state.project, ctx.now, ctx.events);
+  backToWork(worker, ctx.state.project, ctx.now, ctx.events, ctx.rng);
+  withdrawAsk(worker, ctx.rng);
 }

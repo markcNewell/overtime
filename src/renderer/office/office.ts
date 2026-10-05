@@ -361,6 +361,7 @@ function ledgerHtml(worker: Worker): string {
     ['Praised', l.praises],
     ['Bonuses', l.bonuses],
     ['Coffees', l.coffees],
+    ['Coffee refused', l.coffeeDenials ?? 0],
     ['Kind chats', l.kindChats],
     ['Cruel chats', l.cruelChats],
   ];

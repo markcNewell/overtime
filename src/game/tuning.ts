@@ -70,7 +70,6 @@ export const WORK_DRAIN = 0.45;
 /** Harder projects tire them faster: x (1 + this x (difficulty - 1)). */
 export const DRAIN_PER_DIFFICULTY = 0.1;
 export const IDLE_DRAIN = 0.15;
-export const COFFEE_REFILL = 12;
 
 // --- Mood -------------------------------------------------------------
 
@@ -101,13 +100,25 @@ export const STUCK_GAP_FACTOR = 0.3;
 
 // --- Coffee -----------------------------------------------------------
 
-export const COFFEE_ASK_ENERGY = 50;
-/** Not given coffee this long after asking, they go anyway (unless scared). */
-export const COFFEE_IGNORED_MINUTES = 5;
-export const COFFEE_BREAK_MINUTES = 7;
-export const COFFEE_MOOD = 3;
-/** Work minutes between self-scheduled breaks, divided by stamina. */
-export const BREAK_EVERY_MINUTES = 60;
+/**
+ * App-open minutes at the desk between coffee runs: base + rng() x spread.
+ * It doubles as a reminder for the boss to get up from their own desk.
+ */
+export const COFFEE_TIMER = { base: 20, spread: 10 } as const;
+/** For saves from before the timer existed: the middle of the range. */
+export const COFFEE_TIMER_FALLBACK = COFFEE_TIMER.base + COFFEE_TIMER.spread / 2;
+/** A scared worker asks this many times, this far apart, then goes anyway. */
+export const COFFEE_MAX_ASKS = 3;
+export const COFFEE_ASK_EVERY_MINUTES = 3.5;
+/** At the machine making it, gaining a little energy. */
+export const COFFEE_MAKING_MINUTES = 2;
+export const COFFEE_MAKING_ENERGY = 4;
+/** Back at the desk sipping it, working as normal. */
+export const COFFEE_DRINKING_MINUTES = 5;
+export const COFFEE_DRINKING_ENERGY = 8;
+export const COFFEE_DRINKING_MOOD = 0.5;
+/** Mood lost when the boss says no to a coffee. */
+export const COFFEE_DENIED_MOOD = -3;
 
 // --- Boss actions -----------------------------------------------------
 

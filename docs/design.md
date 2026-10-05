@@ -19,7 +19,8 @@ topic, and it's on a screen at work.
 | Brain | The user's own `claude` CLI in print mode, model `haiku`, tools off, thinking off. |
 | Time | Real time. A project takes 1–3 hours. Time freezes when the app is closed ("they go home"). |
 | Boss actions | Shock (click the worker), chat, coffee, praise, shout, bonus (once a day), mess up their code (click the monitor), fire. |
-| Feedback 05-10 | Shock only gets them back to work (no speed-up). They take breaks on their own. Chat replies can act ("go for coffee"). Everything is small and attached to the scene: chat on the desk, compact menus, the office is a pop-up panel. Vicious insults get a real reaction. |
+| Coffee timer 05-10 | Coffee is a timer that reminds the boss to get up too: every 20–30 min they go and make one (scared workers ask, Yes/No, then go anyway after three tries), then drink it at the desk. Replaces the energy-based breaks. |
+| Feedback 05-10 | Shock only gets them back to work (no speed-up). Chat replies can act ("go for coffee"). Everything is small and attached to the scene: chat on the desk, compact menus, the office is a pop-up panel. Vicious insults get a real reaction. |
 | Learning | Skill levels (junior → mid → senior → lead), attitude to the boss, and facts from chat. |
 | Legacy | Departed worker leaves a mug, a sticky note and possibly a half-finished project. Nothing else (no ghost, no hall of fame). |
 | Art | Flat cartoon, drawn in SVG/CSS by code. About 380×320 px window. |
@@ -53,17 +54,23 @@ Level capacity: junior 2, mid 3, senior 4, lead 5. `gap = difficulty − capacit
   - sanityF = `0.7 + 0.3 × sanity/100`
   - stuckF = 0.25 while stuck on a hard part
 - **Energy**: working/stuck −`0.45 × (1 + 0.1 × (difficulty − 1)) / stamina`; idle −0.15;
-  coffee +12. At 0 they fall asleep (no progress) until shocked or sent for coffee.
+  making coffee +4, drinking it +8. At 0 they fall asleep (no progress) until shocked or
+  sent for coffee.
 - **Mood** drifts toward a target at 1 % of the gap per minute. Target 65 working, 70 idle,
   −12 per point of positive gap, −15 if energy < 20. Stuck: −0.3 × severity per minute.
 - **Sanity**: if mood < 30, −`(30 − mood)/30 × 0.5 / resilience`; if mood > 60, +0.03.
 - **Hard parts**: reached when progress passes `at`. Stuck for
   `10 × severity × (1 + 0.3 × max(0, gap)) / talent` minutes.
-- **Coffee**: asks when energy < 50 (once). If not given coffee within 5 min of asking they
-  go anyway, whatever their mood. A break lasts 7 min. Mood +3 at the start.
-- **Breaks**: after `60 / stamina` working or stuck minutes they take a break themselves.
-  Any coffee break, and going home, resets the clock. Scared workers still ask for coffee
-  but never go on their own.
+- **Coffee timer**: `20 + rng × 10` app-open minutes, counting only while working, stuck or
+  idle (paused asleep, on coffee, arriving, leaving, or with the app closed). It doubles
+  as a reminder for the boss to get up. When it runs out they just go (`took-break`),
+  unless scared: then they ask (`wants-coffee`, attempts 1–3, 3.5 min apart) and go
+  anyway 3.5 min after the third ask, about 10.5 min in all. Saying no: mood −3, timer
+  restarts. A shock or shout withdraws a pending ask and restarts the timer.
+- **Coffee run**: 2 min at the machine (+4 energy a minute), then back at the desk working
+  as normal while drinking for 5 min (+8 energy, +0.5 mood a minute). The timer restarts
+  when they sit down. A shock (or "get back to work") during the run brings them back
+  with no coffee and restarts the timer. Going home clears any run or ask and restarts it.
 - **Shock** gives no speed boost: it only wakes a sleeper (+15 energy) or ends a coffee
   break. Shout keeps ×1.3 for 5 min.
 - **Sabotage** plants a mystery hard part where they are, after knocking progress back
@@ -71,12 +78,13 @@ Level capacity: junior 2, mid 3, senior 4, lead 5. `gap = difficulty − capacit
   `n` sabotages in the previous 30 min. Mood −4, sanity −4. Stuck on one: sanity
   −0.25 per minute on top.
 
-Simulated with all traits 1, a tick every 5 s, coffee whenever asked and severity-2 hard
-parts (`tests/game-tuning.test.ts`), with 2 / 3 hard parts and breaks included: junior on
-d1 80 / 96 min, mid on d3 119 / 141, senior on d4 142 / 157, lead on d5 157 / 175 (two
-breaks); all Masterpiece. Fewer energy dips offset the time on breaks. Trait extremes
-stretch this to 73–201 min. A junior on d5 never sent for coffee takes 6.1 h and ships
-"Buggy"; shocked every 3 min they lose their mind in 74 min.
+Simulated with all traits 1, a tick every 5 s, the boss saying yes to coffee and
+severity-2 hard parts (`tests/game-tuning.test.ts`), with 2 / 3 hard parts and coffee runs
+included: junior on d1 76 / 93 min, mid on d3 115 / 130, senior on d4 131 / 148, lead on
+d5 148 / 166 (six runs); all Masterpiece. Energy never drops below 84. Trait extremes
+stretch this to 69–187 min. A scared lead on d5 who is always told no falls asleep after
+2.6 h. A junior on d5 takes 5.6 h and ships "Buggy"; shocked every 3 min they lose their
+mind in 74 min.
 
 ### Boss actions
 
@@ -85,7 +93,8 @@ stretch this to 73–201 min. A junior on d5 never sent for coffee takes 6.1 h a
 | Shock (click) | Gets them back to work: wakes a sleeper (+15 energy) or drags them back from coffee. No speed-up. Mood −10, sanity −3. |
 | Shout | Speed ×1.3 for 5 min, mood −6, sanity −1. |
 | Praise | Mood +8, halved for each praise in the last 30 min. |
-| Coffee | Starts a coffee break (refused if already on one or arriving or leaving). |
+| Coffee | Starts a coffee run now (refused if already on one, or arriving or leaving). Restarts the timer when they're back. |
+| No (to a coffee ask) | Only while a scared worker is asking. Mood −3, counted as a refused coffee, timer restarts. |
 | Bonus | Mood +25, sanity +10. Once per local calendar day, otherwise refused. |
 | Chat | Claude judges the boss's tone: kind mood +4, cruel mood −6 and sanity −1. A reply can carry an action: `coffee` (they agreed to take a break) or `work` (they agreed to get back to it). Their face reacts for a few seconds. |
 | Mess up their code (click the monitor) | Plants a mystery hard part at their current progress and knocks progress back 3 %. Mood −4, sanity −4. Severity 1–3, rising with each sabotage inside 30 min. Stuck on a mystery bug drains an extra 0.25 sanity a minute. They never know it was you, but get paranoid after a few. Planted during a coffee break, they find it when they sit back down. |

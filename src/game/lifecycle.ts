@@ -15,12 +15,17 @@ import { clamp } from './formulas';
 import { xpFor } from './levels';
 import { BUBBLE_MS, HOME, START_STATS } from './tuning';
 import {
+  clearAsk,
+  freshCoffeeTimer,
+  MIDDLE_RNG,
   nudge,
   pruneRecent,
   refreshAttitude,
+  restartCoffeeTimer,
   resume,
   startEnding,
   withMemory,
+  type Rng,
 } from './worker';
 
 /**
@@ -53,10 +58,16 @@ export function newGameState(settings: Settings, now: number): GameState {
  * @param state - The current state (not changed).
  * @param candidateId - Id of a candidate in `state.candidates`.
  * @param now - Epoch ms.
+ * @param rng - Randomness for the first coffee timer; the app passes Math.random.
  * @returns The new state, with the worker arriving and the shortlist cleared.
  * @throws If the candidate isn't on the shortlist or someone already works here.
  */
-export function hire(state: GameState, candidateId: string, now: number): GameState {
+export function hire(
+  state: GameState,
+  candidateId: string,
+  now: number,
+  rng: Rng = MIDDLE_RNG,
+): GameState {
   const next = structuredClone(state);
   if (next.worker) throw new Error('Someone already works here');
   const candidate = next.candidates.find((c) => c.id === candidateId);
@@ -76,6 +87,7 @@ export function hire(state: GameState, candidateId: string, now: number): GameSt
       cruelChats: 0,
       coffees: 0,
       sabotages: 0,
+      coffeeDenials: 0,
     },
     attitude: 'neutral',
     memories: next.deskLeftovers.map((item) => deskMemory(item, now)),
@@ -85,7 +97,7 @@ export function hire(state: GameState, candidateId: string, now: number): GameSt
     recentShocks: [],
     recentPraises: [],
     recentSabotages: [],
-    minutesSinceBreak: 0,
+    coffeeTimer: freshCoffeeTimer(rng),
     lowMoodMinutes: 0,
   };
   next.candidates = [];
@@ -226,9 +238,10 @@ function pastWorker(worker: Worker, endedAt: number, lastWords: string): PastWor
  *
  * @param state - The current state (not changed).
  * @param now - Epoch ms.
+ * @param rng - Randomness for the fresh coffee timer.
  * @returns The new state; unchanged without a worker or while leaving.
  */
-export function goHome(state: GameState, now: number): GameState {
+export function goHome(state: GameState, now: number, rng: Rng = MIDDLE_RNG): GameState {
   const next = structuredClone(state);
   const worker = next.worker;
   if (!worker || worker.activity === 'leaving') return next;
@@ -239,11 +252,13 @@ export function goHome(state: GameState, now: number): GameState {
     mood: (HOME.moodTarget - stats.mood) * HOME.moodPull,
     sanity: HOME.sanity,
   });
+  // A new day: no half-made coffee, no pending ask, a fresh timer.
   delete worker.coffeeUntil;
+  delete worker.drinkingFor;
   delete worker.boost;
-  delete worker.wantsCoffeeSince;
+  clearAsk(worker);
+  restartCoffeeTimer(worker, rng);
   worker.lowMoodMinutes = 0;
-  worker.minutesSinceBreak = 0;
   pruneRecent(worker, now);
   resume(worker, next.project, now);
   // Nobody is listening for events here; the next tick reports from scratch.

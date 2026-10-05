@@ -16,13 +16,19 @@ import type {
 import { deriveAttitude } from './attitude';
 import { clamp } from './formulas';
 import {
-  COFFEE_BREAK_MINUTES,
-  COFFEE_MOOD,
+  COFFEE_MAKING_MINUTES,
+  COFFEE_TIMER,
   MAX_MEMORIES,
   MS_PER_MINUTE,
   RECENT_WINDOW_MINUTES,
   WAKE_ENERGY,
 } from './tuning';
+
+/** A source of numbers in [0, 1); the app passes Math.random. */
+export type Rng = () => number;
+
+/** The default for every `rng` parameter, so tests stay deterministic. */
+export const MIDDLE_RNG: Rng = () => 0.5;
 
 /**
  * Add deltas to the stats and keep them in 0-100.
@@ -56,34 +62,81 @@ export function resume(worker: Worker, project: Project | undefined, t: number):
 }
 
 /**
- * Send them to the coffee station. Any break resets the break clock.
+ * Off to the machine to make a coffee. Any pending ask is answered by it,
+ * and a mug still being sipped is abandoned for the fresh one.
  *
  * @param worker - Changed in place.
- * @param t - Epoch ms the break starts.
+ * @param t - Epoch ms the run starts.
  */
-export function startCoffee(worker: Worker, t: number): void {
+export function startCoffeeRun(worker: Worker, t: number): void {
   worker.activity = 'coffee';
   worker.activitySince = t;
-  worker.coffeeUntil = t + COFFEE_BREAK_MINUTES * MS_PER_MINUTE;
-  worker.minutesSinceBreak = 0;
-  delete worker.wantsCoffeeSince;
-  nudge(worker.stats, { mood: COFFEE_MOOD });
+  worker.coffeeUntil = t + COFFEE_MAKING_MINUTES * MS_PER_MINUTE;
+  delete worker.drinkingFor;
+  clearAsk(worker);
 }
 
 /**
- * Get them back to the desk: wake a sleeper or end a coffee break.
- * Anyone already at the desk (or arriving) is left as they are.
+ * A fresh coffee timer: 20-30 minutes until the next run.
+ *
+ * @param rng - Picks where in the range.
+ * @returns Minutes.
+ */
+export function freshCoffeeTimer(rng: Rng): number {
+  return COFFEE_TIMER.base + rng() * COFFEE_TIMER.spread;
+}
+
+/**
+ * Wind the coffee timer back up.
+ *
+ * @param worker - Changed in place.
+ * @param rng - Picks where in the range.
+ */
+export function restartCoffeeTimer(worker: Worker, rng: Rng): void {
+  worker.coffeeTimer = freshCoffeeTimer(rng);
+}
+
+/**
+ * Forget a pending request for coffee.
+ *
+ * @param worker - Changed in place.
+ */
+export function clearAsk(worker: Worker): void {
+  delete worker.wantsCoffeeSince;
+  delete worker.coffeeAsks;
+  delete worker.nextAskIn;
+}
+
+/**
+ * A scared worker takes back their request (after being shocked or shouted
+ * at) and waits a whole timer before trying again.
+ *
+ * @param worker - Changed in place.
+ * @param rng - For the restarted timer.
+ */
+export function withdrawAsk(worker: Worker, rng: Rng): void {
+  if (worker.wantsCoffeeSince === undefined) return;
+  clearAsk(worker);
+  restartCoffeeTimer(worker, rng);
+}
+
+/**
+ * Get them back to the desk: wake a sleeper, or pull them away from the
+ * coffee machine empty-handed. Anyone already at the desk (or arriving) is
+ * left as they are.
  *
  * @param worker - Changed in place.
  * @param project - The current project, if any.
  * @param t - Epoch ms.
  * @param events - `woke-up` is pushed here when they were asleep.
+ * @param rng - For the coffee timer, restarted when a run is cut short.
  */
 export function backToWork(
   worker: Worker,
   project: Project | undefined,
   t: number,
   events: GameEvent[],
+  rng: Rng,
 ): void {
   if (worker.activity === 'asleep') {
     nudge(worker.stats, { energy: WAKE_ENERGY });
@@ -93,6 +146,7 @@ export function backToWork(
   }
   if (worker.activity !== 'coffee') return;
   delete worker.coffeeUntil;
+  restartCoffeeTimer(worker, rng);
   resume(worker, project, t);
 }
 
@@ -115,8 +169,9 @@ export function startEnding(
   worker.activity = 'leaving';
   worker.activitySince = t;
   delete worker.coffeeUntil;
-  delete worker.wantsCoffeeSince;
+  delete worker.drinkingFor;
   delete worker.boost;
+  clearAsk(worker);
   events.push({ type: 'ending', kind });
 }
 

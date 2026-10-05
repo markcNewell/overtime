@@ -95,6 +95,8 @@ export interface Ledger {
   coffees: number;
   /** Times the boss secretly broke their code. They don't know it's you. */
   sabotages: number;
+  /** Times the boss said no when they asked for a coffee. */
+  coffeeDenials: number;
 }
 
 export type MemoryKind = 'boss' | 'work' | 'desk' | 'self';
@@ -124,16 +126,28 @@ export interface Worker extends Candidate {
   recentPraises: number[];
   /** Times of recent sabotage; each one in quick succession is nastier. */
   recentSabotages: number[];
-  /** Work minutes since their last break, for taking breaks unasked. */
-  minutesSinceBreak: number;
+  /**
+   * App-open minutes until their next coffee run: 20 plus a random 0-10,
+   * restarted when they sit back down with a mug (or are told no).
+   */
+  coffeeTimer: number;
   /** Local calendar day (YYYY-MM-DD) of the last bonus. */
   lastBonusDay?: string;
   /** Consecutive minutes spent at rock-bottom mood. */
   lowMoodMinutes: number;
-  /** Set when they have asked for coffee and not had it yet. */
+  /**
+   * Set while a worker who's scared of the boss is asking permission for a
+   * coffee; the overlay shows Yes / No buttons until it's answered.
+   */
   wantsCoffeeSince?: number;
-  /** When the current coffee break ends. */
+  /** How many times they've asked for this coffee (courage builds up). */
+  coffeeAsks?: number;
+  /** App-open minutes until they ask again, while waiting for an answer. */
+  nextAskIn?: number;
+  /** When they finish making the coffee at the machine and head back. */
   coffeeUntil?: number;
+  /** App-open minutes left sipping a fresh coffee at the desk. */
+  drinkingFor?: number;
   /** Set once an ending starts; the worker is then `leaving`. */
   ending?: EndingKind;
 }
@@ -298,6 +312,8 @@ export type BossAction =
   | { type: 'bonus' }
   | { type: 'fire' }
   | { type: 'sabotage' }
+  /** Say no to a (scared) worker asking for a coffee. */
+  | { type: 'deny-coffee' }
   | { type: 'chat'; tone: ChatTone; request?: ChatRequest };
 
 export type BossActionType = BossAction['type'];
@@ -308,9 +324,11 @@ export type GameEvent =
   | { type: 'hard-part-hit'; index: number }
   | { type: 'hard-part-cleared'; index: number }
   | { type: 'project-finished'; quality: number; grade: string }
-  | { type: 'wants-coffee' }
+  /** A scared worker asks permission; `attempt` counts up as courage builds. */
+  | { type: 'wants-coffee'; attempt: number }
+  /** A scared worker gave up waiting for an answer and went anyway. */
   | { type: 'took-coffee-anyway' }
-  /** They decided on their own it was time for a break. */
+  /** The coffee timer went off and they just went (not scared of you). */
   | { type: 'took-break' }
   /** Their HR complaint sat unanswered too long. */
   | { type: 'complaint-ignored'; id: string }

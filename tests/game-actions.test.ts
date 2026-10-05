@@ -79,6 +79,18 @@ function office(patch: Partial<Worker> = {}): GameState {
   };
 }
 
+/** A scared Pat on their second nervous ask for a coffee. */
+function asking(): GameState {
+  return office({
+    attitude: 'scared',
+    ledger: ledger({ shocks: 3 }),
+    coffeeTimer: 0,
+    wantsCoffeeSince: T0 - 4 * MIN,
+    coffeeAsks: 2,
+    nextAskIn: 3,
+  });
+}
+
 /** Apply actions in order, `gapMs` apart, collecting every event. */
 function doAll(
   start: GameState,
@@ -106,6 +118,7 @@ function ledger(patch: Partial<Ledger>): Ledger {
     cruelChats: 0,
     coffees: 0,
     sabotages: 0,
+    coffeeDenials: 0,
     ...patch,
   };
 }
@@ -122,7 +135,15 @@ describe('refusals', () => {
 
   it('refuses everything while they are leaving', () => {
     const leaving = office({ activity: 'leaving', ending: 'fired' });
-    const types = ['shock', 'praise', 'coffee', 'bonus', 'sabotage', 'fire'] as const;
+    const types = [
+      'shock',
+      'praise',
+      'coffee',
+      'deny-coffee',
+      'bonus',
+      'sabotage',
+      'fire',
+    ] as const;
     for (const type of types) {
       const r = act(leaving, { type }, T0);
       expect(r.events).toHaveLength(1);
@@ -177,11 +198,14 @@ describe('shock', () => {
     expect(r.events.map((e) => e.type)).toContain('shock-warning');
   });
 
-  it('drags them out of a coffee break', () => {
-    const onCoffee = act(office(), { type: 'coffee' }, T0).state;
-    const r = act(onCoffee, { type: 'shock' }, T0 + MIN);
-    expect(r.state.worker!.activity).toBe('working');
-    expect(r.state.worker!.coffeeUntil).toBeUndefined();
+  it('drags them away from the coffee machine empty-handed', () => {
+    const onCoffee = act(office({ coffeeTimer: 0 }), { type: 'coffee' }, T0).state;
+    const r = act(onCoffee, { type: 'shock' }, T0 + MIN, () => 0);
+    const w = r.state.worker!;
+    expect(w.activity).toBe('working');
+    expect(w.coffeeUntil).toBeUndefined();
+    expect(w.drinkingFor).toBeUndefined();
+    expect(w.coffeeTimer).toBe(20);
   });
 
   it('leaves a shout boost as it was', () => {
@@ -238,14 +262,15 @@ describe('the other actions', () => {
     expect(next.state.worker!.ledger.bonuses).toBe(2);
   });
 
-  it('coffee starts a 7-minute break with a mood lift', () => {
-    const tired = office({ wantsCoffeeSince: T0 - MIN, minutesSinceBreak: 45 });
-    const w = act(tired, { type: 'coffee' }, T0).state.worker!;
+  it('coffee sends them to make one now and answers any pending ask', () => {
+    const asking = office({ wantsCoffeeSince: T0 - MIN, coffeeAsks: 2, nextAskIn: 1 });
+    const w = act(asking, { type: 'coffee' }, T0).state.worker!;
     expect(w.activity).toBe('coffee');
-    expect(w.coffeeUntil).toBe(T0 + 7 * MIN);
-    expect(w.stats.mood).toBe(53);
+    expect(w.coffeeUntil).toBe(T0 + 2 * MIN);
+    expect(w.stats.mood).toBe(50);
     expect(w.wantsCoffeeSince).toBeUndefined();
-    expect(w.minutesSinceBreak).toBe(0);
+    expect(w.coffeeAsks).toBeUndefined();
+    expect(w.nextAskIn).toBeUndefined();
     expect(w.ledger.coffees).toBe(1);
   });
 
@@ -285,13 +310,15 @@ describe('the other actions', () => {
       { type: 'chat', tone: 'kind', request: 'coffee' },
       { type: 'chat', tone: 'neutral', request: 'work' },
       { type: 'sabotage' },
+      { type: 'deny-coffee' },
       { type: 'fire' },
     ];
     for (const action of actions) {
-      const state = office({ activity: 'asleep' });
-      const before = structuredClone(state);
-      act(state, action, T0);
-      expect(state).toEqual(before);
+      for (const state of [office({ activity: 'asleep' }), asking()]) {
+        const before = structuredClone(state);
+        act(state, action, T0);
+        expect(state).toEqual(before);
+      }
     }
   });
 
@@ -308,13 +335,12 @@ describe('chat requests', () => {
   const backToWork: BossAction = { type: 'chat', tone: 'neutral', request: 'work' };
 
   it('"take a break" starts a coffee break like the Coffee button', () => {
-    const r = act(office({ minutesSinceBreak: 30 }), kindCoffee, T0);
+    const r = act(office(), kindCoffee, T0);
     const w = r.state.worker!;
     expect(w.activity).toBe('coffee');
-    expect(w.coffeeUntil).toBe(T0 + 7 * MIN);
+    expect(w.coffeeUntil).toBe(T0 + 2 * MIN);
     expect(w.ledger).toMatchObject({ coffees: 1, kindChats: 1 });
-    expect(w.stats.mood).toBe(50 + 4 + 3);
-    expect(w.minutesSinceBreak).toBe(0);
+    expect(w.stats.mood).toBe(50 + 4);
     expect(r.events).toEqual([]);
   });
 
@@ -328,8 +354,8 @@ describe('chat requests', () => {
     const r = act(onCoffee, kindCoffee, T0 + MIN);
     expect(r.events).toEqual([]);
     expect(r.state.worker!.ledger).toMatchObject({ coffees: 1, kindChats: 1 });
-    expect(r.state.worker!.coffeeUntil).toBe(T0 + 7 * MIN);
-    expect(r.state.worker!.stats.mood).toBe(50 + 3 + 4);
+    expect(r.state.worker!.coffeeUntil).toBe(T0 + 2 * MIN);
+    expect(r.state.worker!.stats.mood).toBe(50 + 4);
 
     const arriving = act(office({ activity: 'arriving' }), kindCoffee, T0);
     expect(arriving.events).toEqual([]);
@@ -337,13 +363,15 @@ describe('chat requests', () => {
     expect(arriving.state.worker!.ledger.coffees).toBe(0);
   });
 
-  it('"get back to work" ends a coffee break painlessly', () => {
-    const onCoffee = act(office(), { type: 'coffee' }, T0).state;
+  it('"get back to work" ends a coffee run painlessly', () => {
+    const onCoffee = act(office({ coffeeTimer: 0 }), { type: 'coffee' }, T0).state;
     const before = onCoffee.worker!;
     const r = act(onCoffee, backToWork, T0 + MIN);
     const w = r.state.worker!;
     expect(w.activity).toBe('working');
     expect(w.coffeeUntil).toBeUndefined();
+    expect(w.drinkingFor).toBeUndefined();
+    expect(w.coffeeTimer).toBe(25);
     expect(w.stats).toEqual(before.stats);
     expect(w.ledger).toEqual(before.ledger);
     expect(r.events).toEqual([]);
@@ -365,6 +393,54 @@ describe('chat requests', () => {
     const r = act(office(), { type: 'chat', tone: 'cruel', request: 'work' }, T0);
     expect(r.state.worker!.activity).toBe('working');
     expect(r.state.worker!.stats).toMatchObject({ mood: 44, sanity: 79 });
+  });
+});
+
+describe('answering a coffee request', () => {
+  it('deny is refused when nobody asked', () => {
+    const r = act(office(), { type: 'deny-coffee' }, T0);
+    expect(r.events).toEqual([
+      {
+        type: 'action-refused',
+        action: 'deny-coffee',
+        reason: "They haven't asked for one",
+      },
+    ]);
+  });
+
+  it('deny clears the ask, stings a little, counts and restarts the timer', () => {
+    const r = act(asking(), { type: 'deny-coffee' }, T0, () => 0.2);
+    const w = r.state.worker!;
+    expect(w.wantsCoffeeSince).toBeUndefined();
+    expect(w.coffeeAsks).toBeUndefined();
+    expect(w.nextAskIn).toBeUndefined();
+    expect(w.coffeeTimer).toBeCloseTo(22, 9);
+    expect(w.stats.mood).toBe(47);
+    expect(w.ledger.coffeeDenials).toBe(1);
+    expect(w.activity).toBe('working');
+  });
+
+  it('saying yes (the Coffee button) sends them off', () => {
+    const r = act(asking(), { type: 'coffee' }, T0);
+    expect(r.state.worker!.activity).toBe('coffee');
+    expect(r.state.worker!.wantsCoffeeSince).toBeUndefined();
+    expect(r.state.worker!.ledger.coffees).toBe(1);
+  });
+
+  it('a shock or a shout makes them take the request back', () => {
+    for (const type of ['shock', 'shout'] as const) {
+      const w = act(asking(), { type }, T0, () => 0).state.worker!;
+      expect(w.wantsCoffeeSince).toBeUndefined();
+      expect(w.coffeeAsks).toBeUndefined();
+      expect(w.nextAskIn).toBeUndefined();
+      expect(w.coffeeTimer).toBe(20);
+      expect(w.activity).toBe('working');
+    }
+  });
+
+  it('a shout leaves the timer alone when nothing was asked', () => {
+    const w = act(office({ coffeeTimer: 12 }), { type: 'shout' }, T0).state.worker!;
+    expect(w.coffeeTimer).toBe(12);
   });
 });
 

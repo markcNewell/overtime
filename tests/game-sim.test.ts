@@ -110,6 +110,7 @@ function run(
   start: GameState,
   minutes: number,
   stop?: (e: GameEvent) => boolean,
+  rng?: () => number,
 ): { state: GameState; events: Timed[]; now: number } {
   let state = start;
   const events: Timed[] = [];
@@ -117,7 +118,7 @@ function run(
   let now = start.lastTickAt;
   while (now < end) {
     now += 5000;
-    const r = tick(state, now);
+    const r = tick(state, now, rng);
     state = r.state;
     events.push(...r.events.map((event) => ({ at: now, event })));
     if (stop && r.events.some(stop)) break;
@@ -201,7 +202,10 @@ describe('arriving', () => {
 
 describe('hard parts', () => {
   it('bite at exactly their progress, once each, in order', () => {
-    const state = working({ hardParts: [part(0.6), part(0.3)] });
+    // No coffee runs, so the stuck timer isn't paused part-way.
+    const state = patchWorker(working({ hardParts: [part(0.6), part(0.3)] }), {
+      coffeeTimer: 1000,
+    });
     const first = run(state, 300, (e) => e.type === 'hard-part-hit');
     expect(first.events.at(-1)!.event).toEqual({ type: 'hard-part-hit', index: 0 });
     expect(first.state.project!.progress).toBe(0.3);
@@ -315,15 +319,29 @@ describe('energy, sleep and coffee', () => {
     expect(woken.state.worker!.stats.energy).toBeCloseTo(15, 6);
   });
 
-  it('coffee refills energy for seven minutes then they go back to work', () => {
+  it('a coffee run: 2 minutes at the machine, then 5 sipping at the desk', () => {
     const tired = patchStats(working(), { energy: 10 });
     const sent = act(tired, { type: 'coffee' }, T0).state;
     expect(sent.worker!.activity).toBe('coffee');
-    const r = run(sent, 8, (e) => e.type === 'coffee-done');
-    expect(types(r.events)).toEqual(['coffee-done']);
-    expect((r.now - T0) / MIN).toBeCloseTo(7, 6);
-    expect(r.state.worker!.stats.energy).toBeCloseTo(10 + 7 * 12, 6);
-    expect(r.state.worker!.activity).toBe('working');
+
+    const made = run(sent, 3, (e) => e.type === 'coffee-done', () => 0);
+    expect(types(made.events)).toEqual(['coffee-done']);
+    expect((made.now - T0) / MIN).toBeCloseTo(2, 6);
+    const back = made.state.worker!;
+    expect(back.stats.energy).toBeCloseTo(10 + 2 * 4, 6);
+    expect(back.activity).toBe('working');
+    expect(back.drinkingFor).toBe(5);
+    expect(back.coffeeTimer).toBe(20);
+    expect(made.state.project!.progress).toBe(0);
+
+    const sipped = run(made.state, 5);
+    const w = sipped.state.worker!;
+    expect(w.drinkingFor).toBeUndefined();
+    expect(w.activity).toBe('working');
+    // +8 a minute from the mug, less the usual 0.54 a minute of work.
+    expect(w.stats.energy).toBeCloseTo(18 + 5 * (8 - 0.54), 6);
+    expect(w.stats.mood).toBeGreaterThan(back.stats.mood);
+    expect(sipped.state.project!.progress).toBeGreaterThan(0);
   });
 
   it('coffee pulled off a hard part goes back to being stuck on it', () => {
@@ -334,73 +352,106 @@ describe('energy, sleep and coffee', () => {
     expect(back.worker!.activity).toBe('stuck');
     expect(back.project!.stuckOn).toBe(0);
   });
+});
 
-  it('ask for coffee once when energy drops below 50', () => {
-    const state = patchStats(working(), { energy: 50.2 });
-    const r = run(state, 4);
-    expect(types(r.events).filter((t) => t === 'wants-coffee')).toHaveLength(1);
-    expect(r.state.worker!.wantsCoffeeSince).toBeDefined();
+describe('the coffee timer', () => {
+  /** Hired with this rng and already sat at the desk, nothing to do. */
+  function settled(rng: number, patch: Partial<Worker> = {}): GameState {
+    const empty = newGameState(SETTINGS, T0);
+    const state = hire({ ...empty, candidates: [candidate()] }, 'c1', T0, () => rng);
+    return patchWorker(state, { activity: 'idle', ...patch });
+  }
+
+  it('goes off 20-30 desk minutes after hiring, and they just go', () => {
+    for (const [rng, minutes] of [[0, 20], [0.5, 25], [0.99, 29.9]] as const) {
+      const r = run(settled(rng), 40, (e) => e.type === 'took-break');
+      expect((r.now - T0) / MIN).toBeCloseTo(minutes, 1);
+      expect(types(r.events)).toEqual(['took-break']);
+      expect(r.state.worker!.activity).toBe('coffee');
+      expect(r.state.worker!.ledger.coffees).toBe(0);
+    }
   });
 
-  it('go anyway 5 minutes after asking, whatever their mood', () => {
-    const state = patchStats(working(), { energy: 49, mood: 90 });
-    const r = run(state, 10, (e) => e.type === 'took-coffee-anyway');
-    const asked = r.events.find((t) => t.event.type === 'wants-coffee')!.at;
-    const went = r.events.find((t) => t.event.type === 'took-coffee-anyway')!.at;
-    expect((went - asked) / MIN).toBeCloseTo(5, 6);
-    expect(r.state.worker!.activity).toBe('coffee');
-    expect(r.state.worker!.ledger.coffees).toBe(0);
+  it('restarts at 20-30 minutes when they sit back down with the mug', () => {
+    const start = settled(0.5, { coffeeTimer: 0.01 });
+    const r = run(start, 5, (e) => e.type === 'coffee-done', () => 0.3);
+    expect(r.state.worker!.coffeeTimer).toBeCloseTo(23, 9);
   });
 
-  it('take a break of their own after 60 / stamina work minutes', () => {
-    const state = working({ difficulty: 5, hardParts: [] }, {
-      level: 'lead',
-      traits: { stamina: 1.2, resilience: 1, talent: 1 },
-    });
-    const r = run(state, 60, (e) => e.type === 'took-break');
-    expect(types(r.events)).toEqual(['took-break']);
-    expect((r.now - T0) / MIN).toBeCloseTo(50, 6);
-    expect(r.state.worker!.activity).toBe('coffee');
-    expect(r.state.worker!.minutesSinceBreak).toBe(0);
-    expect(r.state.worker!.ledger.coffees).toBe(0);
+  it('is paused while asleep, making coffee or arriving', () => {
+    for (const activity of ['asleep', 'arriving'] as const) {
+      // activitySince in the future keeps an arrival from finishing.
+      const since = T0 + 60 * MIN;
+      const state = settled(0.5, { activity, coffeeTimer: 10, activitySince: since });
+      expect(run(state, 30).state.worker!.coffeeTimer).toBe(10);
+    }
+    const making = act(settled(0.5, { coffeeTimer: 7 }), { type: 'coffee' }, T0).state;
+    const halfway = run(making, 1).state.worker!;
+    expect(halfway.activity).toBe('coffee');
+    expect(halfway.coffeeTimer).toBe(7);
   });
 
-  it('only count working and stuck minutes towards a break', () => {
-    const idle = run(hired(), 90).state.worker!;
-    expect(idle.minutesSinceBreak).toBe(0);
-    const asleep = patchWorker(working(), { activity: 'asleep', minutesSinceBreak: 10 });
-    expect(run(asleep, 30).state.worker!.minutesSinceBreak).toBe(10);
+  it('does not count time the app was closed', () => {
+    const state = settled(0.5);
+    const later = tick(state, T0 + 3 * 60 * MIN).state;
+    expect(later.worker!.coffeeTimer).toBeCloseTo(24, 9);
   });
 
-  it('scared workers never dare take a break', () => {
-    const state = working();
+  it('scared workers ask three times, 3.5 minutes apart, then go anyway', () => {
+    const state = settled(0.5, { coffeeTimer: 1 });
     const ledger = { ...state.worker!.ledger, shocks: 3 };
-    const scared = patchWorker(patchStats(state, { energy: 49 }), {
-      ledger,
-      attitude: 'scared',
-      minutesSinceBreak: 59,
-    });
-    const r = run(scared, 30);
-    expect(types(r.events)).toContain('wants-coffee');
-    expect(types(r.events)).not.toContain('took-coffee-anyway');
+    const scared = patchWorker(state, { ledger, attitude: 'scared' });
+    const r = run(scared, 20, (e) => e.type === 'took-coffee-anyway');
+    const minutes = (type: string): number[] =>
+      r.events.filter((t) => t.event.type === type).map((t) => (t.at - T0) / MIN);
+
+    const wants = r.events.filter((t) => t.event.type === 'wants-coffee');
+    const expected = [1, 2, 3].map((attempt) => ({ type: 'wants-coffee', attempt }));
+    expect(wants.map((t) => t.event)).toEqual(expected);
+    const asks = minutes('wants-coffee');
+    expect(asks[0]).toBeCloseTo(1, 6);
+    expect(asks[1]).toBeCloseTo(4.5, 6);
+    expect(asks[2]).toBeCloseTo(8, 6);
+    expect(minutes('took-coffee-anyway')[0]).toBeCloseTo(11.5, 6);
     expect(types(r.events)).not.toContain('took-break');
-    expect(r.state.worker!.minutesSinceBreak).toBeCloseTo(89, 6);
+
+    const w = r.state.worker!;
+    expect(w.activity).toBe('coffee');
+    expect(w.wantsCoffeeSince).toBeUndefined();
+    expect(w.coffeeAsks).toBeUndefined();
+    expect(w.nextAskIn).toBeUndefined();
   });
 
-  it('copes with saves from before breaks and sabotage', () => {
+  it('keeps one ask open while they work up the courage', () => {
+    const state = settled(0.5, { coffeeTimer: 1, attitude: 'scared' });
+    const ledger = { ...state.worker!.ledger, shocks: 3 };
+    const r = run(patchWorker(state, { ledger }), 6);
+    const w = r.state.worker!;
+    expect(w.wantsCoffeeSince).toBe(T0 + MIN);
+    expect(w.coffeeAsks).toBe(2);
+    expect(w.nextAskIn).toBeCloseTo(2, 6);
+    expect(w.coffeeTimer).toBe(0);
+  });
+
+  it('copes with saves from before the timer, sabotage and denials', () => {
     const state = working();
     const old = structuredClone(state) as unknown as {
       worker: Record<string, unknown> & { ledger: Record<string, unknown> };
     };
-    delete old.worker.minutesSinceBreak;
+    delete old.worker.coffeeTimer;
     delete old.worker.recentSabotages;
     delete old.worker.ledger.sabotages;
+    delete old.worker.ledger.coffeeDenials;
     const ticked = run(old as unknown as GameState, 2).state;
-    expect(ticked.worker!.minutesSinceBreak).toBeCloseTo(2, 6);
+    expect(ticked.worker!.coffeeTimer).toBeCloseTo(23, 6);
     expect(ticked.worker!.recentSabotages).toEqual([]);
     const broken = act(ticked, { type: 'sabotage' }, ticked.lastTickAt);
     expect(broken.state.worker!.ledger.sabotages).toBe(1);
     expect(broken.events[0]).toEqual({ type: 'code-broken', index: 0 });
+
+    const asking = patchWorker(ticked, { wantsCoffeeSince: T0, coffeeAsks: 1 });
+    const denied = act(asking, { type: 'deny-coffee' }, ticked.lastTickAt);
+    expect(denied.state.worker!.ledger.coffeeDenials).toBe(1);
   });
 });
 

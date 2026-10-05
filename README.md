@@ -22,8 +22,10 @@ boss.
   email you. An envelope appears on the desk. Reply from the Inbox: apologise,
   or convince them it never happened. Gaslighting works best on tired juniors.
   Ignore it for half an hour and they decide the whole company is against them.
-- **They take breaks.** They ask for coffee when they're flagging and go anyway
-  if you ignore them, unless they're too scared of you to dare.
+- **Coffee timer.** Every 20–30 minutes they go and make a coffee, and remind
+  you to stretch your legs too. Workers who are scared of you ask first (Go on
+  then / No) and, if you don't answer, eventually work up the courage to go
+  anyway. They brew it at the machine and sip it back at the desk.
 - **They break.** Lose their mind, get fried, rage-quit, or get fired. Then you
   hire someone new, and they find the last one's mug on the desk.
 

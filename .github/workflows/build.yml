@@ -1,5 +1,6 @@
-# Builds the Windows and macOS apps. Run it from the Actions tab, or push a
-# tag like v0.1.0. The installers are attached to the run as artifacts.
+# Builds the Windows and macOS apps. Push a tag like v0.1.0 (or
+# v0.1.0-alpha.1 for a pre-release) to publish them as a GitHub release, or
+# run it by hand from the Actions tab to get the installers as artifacts.
 name: build
 
 on:
@@ -7,8 +8,24 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -24,10 +41,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npm run ${{ matrix.script }}
         env:
-          # Unsigned builds: no certificates in this repo.
+          # No certificates: Windows builds are unsigned, macOS ones ad-hoc.
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
         with:
@@ -36,3 +52,43 @@ jobs:
             release/*.exe
             release/*.dmg
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Tags with a hyphen (v0.1.0-alpha.1) are pre-releases.
+          pre=""
+          case "$TAG" in *-*) pre="--prerelease" ;; esac
+          cat > notes.md <<'EOF'
+          A tiny cartoon developer for the corner of your screen. You'll need
+          [Claude Code](https://claude.com/claude-code) installed and logged in.
+
+          **Windows:** download `Overtime-*-portable.exe` and run it (no install),
+          or `Overtime Setup *.exe` to install. SmartScreen may warn about an
+          unknown publisher: click **More info → Run anyway**.
+
+          **macOS:** download the `-arm64.dmg` for Apple Silicon (M1 and later) or
+          the plain `.dmg` for Intel, and drag Overtime to Applications. It isn't
+          notarised, so the first launch is blocked: open **System Settings →
+          Privacy & Security** and click **Open Anyway** (or run
+          `xattr -dr com.apple.quarantine /Applications/Overtime.app`).
+
+          It lives in the tray / menu bar. Show or hide the worker with
+          Ctrl+Alt+Shift+O (⌘⌥⇧O on a Mac).
+          EOF
+          gh release create "$TAG" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Overtime $TAG" \
+            --notes-file notes.md \
+            $pre

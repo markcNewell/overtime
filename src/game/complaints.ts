@@ -56,6 +56,31 @@ function topic(subject: string): string {
   return bare || 'what happened';
 }
 
+/**
+ * Whether the worker thinks the whole company is against them: one of their
+ * complaints was ignored and no apology has come since. Same rule as the
+ * brain's persona uses.
+ *
+ * @param state - For the complaints.
+ * @param worker - The worker.
+ * @returns True while they feel persecuted.
+ */
+export function feelsPersecuted(
+  state: Pick<GameState, 'complaints'>,
+  worker: Pick<Worker, 'id'>,
+): boolean {
+  const mine = (state.complaints ?? []).filter((c) => c.workerId === worker.id);
+  const snubs = mine.flatMap((c) => (c.ignoredAt === undefined ? [] : [c.ignoredAt]));
+  if (snubs.length === 0) return false;
+  const lastSnub = Math.max(...snubs);
+  // A late apology on the ignored complaint itself counts, even unstamped.
+  const apologised = mine.some((c) => {
+    const when = c.repliedAt ?? c.ignoredAt ?? c.filedAt;
+    return c.outcome === 'apology' && when >= lastSnub;
+  });
+  return !apologised;
+}
+
 /** Unanswered for this long (app-open minutes) and the complaint is ignored. */
 export const COMPLAINT_IGNORED_MINUTES = 30;
 

@@ -153,11 +153,11 @@ const PAIRINGS: [Level, Difficulty][] = [
 describe('project duration for a sensible pairing', () => {
   for (const [level, difficulty] of PAIRINGS) {
     for (const parts of [2, 3]) {
-      it(`${level} on d${difficulty} with ${parts} hard parts takes 1-3.5 h`, () => {
+      it(`${level} on d${difficulty} with ${parts} hard parts takes 1-3 h`, () => {
         const run = simulate(startProject(level, difficulty, parts), { answer: 'yes' });
         expect(run.ending).toBeUndefined();
         expect(run.minutes).toBeGreaterThanOrEqual(60);
-        expect(run.minutes).toBeLessThanOrEqual(210);
+        expect(run.minutes).toBeLessThanOrEqual(180);
         // A coffee run every 20-30 minutes keeps them going.
         const breaks = run.events.filter((e) => e.type === 'took-break');
         expect(breaks.length).toBeGreaterThan(1);

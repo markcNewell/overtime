@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   Candidate,
+  Complaint,
   GameEvent,
   GameState,
   HardPart,
@@ -21,6 +22,8 @@ import {
   tick,
   xpFor,
 } from '../src/game';
+import { feelsPersecuted } from '../src/game/complaints';
+import { moodFactor, paranoiaFactor } from '../src/game/formulas';
 
 const T0 = new Date(2026, 9, 5, 9, 0).getTime();
 const MIN = 60_000;
@@ -225,22 +228,57 @@ describe('hard parts', () => {
     expect(types(rest.events)).toContain('project-finished');
   });
 
-  it('crawl on while stuck but never past the next hard part', () => {
-    const state = patchProject(working(), {
+  /** Stuck on the part at 0.3 with another close behind it at 0.33. */
+  function stuckAt30(minutesLeft: number): GameState {
+    const base = working({ hardParts: [part(0.3), part(0.33)] });
+    const project = patchProject(base, {
       progress: 0.3,
       hardPartsHit: [0],
       stuckOn: 0,
-      stuckMinutesLeft: 500,
-      hardParts: [part(0.3), part(0.4)],
+      stuckMinutesLeft: minutesLeft,
     });
-    const stuck = patchWorker(state, { activity: 'stuck' });
-    const after = run(stuck, 10).state.project!;
-    // A quarter of mid-on-3 speed: about 0.003 a minute.
-    expect(after.progress).toBeGreaterThan(0.32);
-    expect(after.progress).toBeLessThan(0.34);
-    const later = run(stuck, 120).state.project!;
-    expect(later.progress).toBe(0.4);
-    expect(later.hardPartsHit).toEqual([0]);
+    return patchWorker(project, { activity: 'stuck', coffeeTimer: 1000 });
+  }
+
+  it('keep making progress while stuck, slower than when working', () => {
+    const stuck = stuckAt30(500);
+    const free = patchWorker(patchProject(stuck, { hardParts: [], hardPartsHit: [] }), {
+      activity: 'working',
+    });
+    delete free.project!.stuckOn;
+    const crawled = run(stuck, 10).state.project!.progress - 0.3;
+    const worked = run(free, 10).state.project!.progress - 0.3;
+    expect(crawled).toBeGreaterThan(0);
+    // 0.4 of full speed, a touch less as being stuck sours the mood.
+    expect(crawled / worked).toBeGreaterThan(0.3);
+    expect(crawled / worked).toBeLessThan(0.41);
+  });
+
+  it('creep past the next part while stuck, then meet it once this one is solved', () => {
+    const mid = run(stuckAt30(15), 10).state;
+    expect(mid.project!.progress).toBeGreaterThan(0.33);
+    expect(mid.project!.hardPartsHit).toEqual([0]);
+    expect(mid.project!.stuckOn).toBe(0);
+
+    const r = run(mid, 10, (e) => e.type === 'hard-part-hit');
+    expect(r.events.map((t) => t.event)).toEqual([
+      { type: 'hard-part-cleared', index: 0 },
+      { type: 'hard-part-hit', index: 1 },
+    ]);
+    expect(r.events[0]!.at).toBe(r.events[1]!.at);
+    const project = r.state.project!;
+    expect(project.stuckOn).toBe(1);
+    expect(project.hardPartsHit).toEqual([0, 1]);
+    expect(project.progress).toBeGreaterThan(0.33);
+  });
+
+  it('only finish once they are unstuck', () => {
+    const stuck = patchProject(stuckAt30(5), { progress: 0.999, hardPartsHit: [0, 1] });
+    const crept = run(stuck, 3);
+    expect(crept.state.project!.progress).toBe(1);
+    expect(types(crept.events)).not.toContain('project-finished');
+    const done = run(crept.state, 5, (e) => e.type === 'project-finished');
+    expect(types(done.events)).toEqual(['hard-part-cleared', 'project-finished']);
   });
 
   it('take longer for someone out of their depth', () => {
@@ -249,6 +287,66 @@ describe('hard parts', () => {
     const r = run(state, 120, (e) => e.type === 'hard-part-hit');
     // 10 x 3 x (1 + 0.3 x 3) = 57 minutes.
     expect(r.state.project!.stuckMinutesLeft).toBeCloseTo(57, 6);
+  });
+});
+
+describe('mood and paranoia', () => {
+  /** Ten minutes of progress from a fresh start on a plain project. */
+  function gain(state: GameState): number {
+    return run(state, 10).state.project!.progress;
+  }
+
+  function plain(mood: number, patch: Partial<Worker> = {}): GameState {
+    const state = working({ hardParts: [] });
+    return patchStats(patchWorker(state, { coffeeTimer: 1000, ...patch }), { mood });
+  }
+
+  function ignoredComplaint(patch: Partial<Complaint> = {}): Complaint {
+    return {
+      id: 'hr1',
+      workerId: 'c1',
+      workerName: 'Pat',
+      filedAt: T0 - 60 * MIN,
+      subject: 'Complaint: the shocks',
+      body: 'Please make it stop.',
+      ignoredAt: T0 - 30 * MIN,
+      ...patch,
+    };
+  }
+
+  it('a miserable worker is slower than a happy one, but still working', () => {
+    const happy = gain(plain(90));
+    const miserable = gain(plain(0));
+    expect(miserable).toBeGreaterThan(0);
+    expect(miserable / happy).toBeLessThan(0.7);
+    expect(miserable / happy).toBeGreaterThan(0.55);
+  });
+
+  it('a paranoid worker is slower, down to half speed at most', () => {
+    const happy = gain(plain(90));
+    const sabotaged = plain(90, { recentSabotages: [T0, T0, T0, T0] });
+    const persecuted = { ...sabotaged, complaints: [ignoredComplaint()] };
+    // 1 - 3 x 0.1 - 0.15
+    expect(gain(persecuted) / happy).toBeCloseTo(0.55, 3);
+    expect(gain(sabotaged) / happy).toBeCloseTo(0.7, 3);
+  });
+
+  it('the speed factors stay in range', () => {
+    expect(moodFactor(0)).toBe(0.55);
+    expect(moodFactor(100)).toBe(1);
+    expect(paranoiaFactor(0, false, 100)).toBe(1);
+    expect(paranoiaFactor(9, false, 100)).toBeCloseTo(0.7, 9);
+    expect(paranoiaFactor(1, false, 29)).toBeCloseTo(0.8, 9);
+    expect(paranoiaFactor(3, true, 10)).toBe(0.5);
+  });
+
+  it('an apology since the snub ends the feeling of persecution', () => {
+    const worker = { id: 'c1' };
+    const snubbed = { complaints: [ignoredComplaint()] };
+    expect(feelsPersecuted(snubbed, worker)).toBe(true);
+    const sorry = ignoredComplaint({ outcome: 'apology', repliedAt: T0 });
+    expect(feelsPersecuted({ complaints: [sorry] }, worker)).toBe(false);
+    expect(feelsPersecuted(snubbed, { id: 'someone-else' })).toBe(false);
   });
 });
 

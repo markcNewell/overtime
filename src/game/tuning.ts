@@ -49,9 +49,9 @@ export const AWAY_MINUTES = 30;
 
 // --- Progress ---------------------------------------------------------
 
-/** baseMinutes = BASE + PER_DIFFICULTY x (difficulty - 1): 45 to 105. */
-export const BASE_MINUTES = 45;
-export const BASE_MINUTES_PER_DIFFICULTY = 15;
+/** baseMinutes = BASE + PER_DIFFICULTY x (difficulty - 1): 38 to 86. */
+export const BASE_MINUTES = 38;
+export const BASE_MINUTES_PER_DIFFICULTY = 12;
 /** Speed bonus per level of slack below capacity, capped. */
 export const OVER_SKILL_BONUS = 0.1;
 export const OVER_SKILL_CAP = 2;
@@ -61,8 +61,23 @@ export const UNDER_SKILL_PENALTY = 0.35;
 export const ENERGY_FACTOR_FLOOR = 0.5;
 /** sanityF = FLOOR + (1 - FLOOR) x sanity / 100. */
 export const SANITY_FACTOR_FLOOR = 0.7;
-/** Speed multiplier while stuck on a hard part. */
-export const STUCK_SPEED = 0.25;
+/** moodF = FLOOR + (1 - FLOOR) x mood / 100: miserable people still type. */
+export const MOOD_FACTOR_FLOOR = 0.55;
+/**
+ * paranoiaF = 1 - perSabotage x min(maxSabotages, sabotages in the last
+ * 30 min) - persecuted (an ignored complaint, no apology since) - lowSanity
+ * penalty (sanity below lowSanity), never below floor.
+ */
+export const PARANOIA = {
+  perSabotage: 0.1,
+  maxSabotages: 3,
+  persecuted: 0.15,
+  lowSanity: 30,
+  lowSanityPenalty: 0.1,
+  floor: 0.5,
+} as const;
+/** Speed multiplier while stuck on a hard part: slow going, not a wall. */
+export const STUCK_SPEED = 0.4;
 
 // --- Energy -----------------------------------------------------------
 
@@ -142,7 +157,7 @@ export const CHAT_CRUEL = { mood: -6, sanity: -1 } as const;
 
 export const SABOTAGE = {
   /** Progress lost, never below 0 or a hard part already reached. */
-  knockback: 0.03,
+  knockback: 0.05,
   mood: -4,
   sanity: -4,
   /** Severity = 1 + min(this, sabotages in the window before this one). */

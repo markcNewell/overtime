@@ -6,7 +6,9 @@ import {
   clamp,
   energyFactor,
   minuteQuality,
+  moodFactor,
   moodTarget,
+  paranoiaFactor,
   projectQuality,
   sanityFactor,
   sanityRate,
@@ -14,7 +16,7 @@ import {
   workDrain,
   xpGain,
 } from './formulas';
-import { ageComplaints } from './complaints';
+import { ageComplaints, feelsPersecuted } from './complaints';
 import { gapFor, grade, levelFor, levelRank } from './levels';
 import { hitHardPart, nextHardPart } from './project';
 import {
@@ -32,6 +34,7 @@ import {
   MS_PER_MINUTE,
   MYSTERY_SANITY_DRAIN,
   RAGE_MINUTES,
+  RECENT_WINDOW_MINUTES,
   RAGE_MOOD,
   STUCK_MOOD_PER_SEVERITY,
   STUCK_SPEED,
@@ -201,11 +204,9 @@ function stepStuck(s: Step): void {
   }
   const gap = gapFor(s.worker.level, project.difficulty);
   const rate = progressPerMinute(s, project, gap) * STUCK_SPEED;
-  // Crawl, but never past the next hard part or the finish line.
-  const next = nextHardPart(project);
-  const cap = Math.min(1, next === undefined ? 1 : (project.hardParts[next]?.at ?? 1));
-  const reach = Math.min(project.progress + rate * s.minutes, cap);
-  project.progress = Math.max(project.progress, reach);
+  // Slow going, not a wall: they can creep past later parts, which then
+  // bite once this one is solved. Finishing waits until they're unstuck.
+  project.progress = Math.min(1, project.progress + rate * s.minutes);
   doDeskWork(s, project, gap);
 
   const part = project.hardParts[project.stuckOn];
@@ -223,6 +224,12 @@ function stepStuck(s: Step): void {
   delete project.stuckMinutesLeft;
   resume(s.worker, project, s.t);
   s.events.push({ type: 'hard-part-cleared', index });
+  // Straight on to any part they crept past while stuck on this one.
+  const next = nextHardPart(project);
+  const passed = next === undefined ? undefined : project.hardParts[next];
+  if (next !== undefined && passed && passed.at <= project.progress) {
+    hitHardPart(project, s.worker, next, s.t, s.events);
+  }
 }
 
 /** Score the minute's quality and pay for it in energy. */
@@ -236,13 +243,24 @@ function doDeskWork(s: Step, project: Project, gap: number): void {
 }
 
 function progressPerMinute(s: Step, project: Project, gap: number): number {
-  const { stats } = s.worker;
+  const { worker } = s;
+  const { stats } = worker;
   const speed =
     skillFactor(gap) *
     energyFactor(stats.energy) *
     sanityFactor(stats.sanity) *
-    boostAt(s.worker, s.t);
+    moodFactor(stats.mood) *
+    paranoia(s) *
+    boostAt(worker, s.t);
   return speed / baseMinutes(project.difficulty);
+}
+
+function paranoia(s: Step): number {
+  const { worker } = s;
+  const since = s.t - RECENT_WINDOW_MINUTES * MS_PER_MINUTE;
+  const sabotages = (worker.recentSabotages ?? []).filter((at) => at >= since).length;
+  const persecuted = feelsPersecuted(s.state, worker);
+  return paranoiaFactor(sabotages, persecuted, worker.stats.sanity);
 }
 
 function finishProject(s: Step, project: Project): void {

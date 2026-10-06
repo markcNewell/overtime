@@ -130,11 +130,11 @@ describe('refusals', () => {
 });
 
 describe('planting a bug', () => {
-  it('knocks progress back and they hit the bug at once if working', () => {
+  it('costs 5% and they hit the bug at once if working', () => {
     const r = act(at(0.5), SABOTAGE, T0);
     const project = r.state.project!;
     const worker = r.state.worker!;
-    expect(project.progress).toBeCloseTo(0.47, 9);
+    expect(project.progress).toBeCloseTo(0.45, 9);
     expect(titles(project)).toEqual([
       'Part at 0.3',
       'Semicolons became Greek question marks',
@@ -142,7 +142,7 @@ describe('planting a bug', () => {
     ]);
     const bug = project.hardParts[1]!;
     expect(bug).toMatchObject({ severity: 1, mystery: true });
-    expect(bug.at).toBeCloseTo(0.47, 9);
+    expect(bug.at).toBeCloseTo(0.45, 9);
     expect(r.events).toEqual([
       { type: 'code-broken', index: 1 },
       { type: 'hard-part-hit', index: 1 },
@@ -182,6 +182,27 @@ describe('planting a bug', () => {
       { type: 'hard-part-hit', index: 1 },
     ]);
     expect(after.state.project!.hardParts[1]!.mystery).toBe(true);
+  });
+
+  it('lands ahead of a part they crept past while stuck', () => {
+    const crept = stuckOn(at(0.32), 0);
+    const state = { ...crept, project: { ...crept.project!, progress: 0.7 } };
+    const r = act(state, SABOTAGE, T0);
+    const project = r.state.project!;
+    expect(project.progress).toBeCloseTo(0.65, 9);
+    expect(titles(project)).toEqual([
+      'Part at 0.3',
+      'Semicolons became Greek question marks',
+      'Part at 0.6',
+    ]);
+    expect(project.hardParts[1]!.at).toBe(0.6);
+    expect(project.stuckOn).toBe(0);
+
+    const hits = run(r.state, 40).events.filter((e) => e.type === 'hard-part-hit');
+    expect(hits).toEqual([
+      { type: 'hard-part-hit', index: 1 },
+      { type: 'hard-part-hit', index: 2 },
+    ]);
   });
 
   it('a stuck worker deep in the list keeps pointing at the right parts', () => {

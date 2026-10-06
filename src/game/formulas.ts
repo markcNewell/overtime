@@ -6,12 +6,14 @@ import {
   BASE_MINUTES_PER_DIFFICULTY,
   DRAIN_PER_DIFFICULTY,
   ENERGY_FACTOR_FLOOR,
+  MOOD_FACTOR_FLOOR,
   MOOD_OVERLOAD_PENALTY,
   MOOD_TARGET_RESTING,
   MOOD_TARGET_WORKING,
   MOOD_TIRED_PENALTY,
   OVER_SKILL_BONUS,
   OVER_SKILL_CAP,
+  PARANOIA,
   QUALITY_GAP_PENALTY,
   QUALITY_WEIGHTS as W,
   RUSHED_QUALITY,
@@ -80,6 +82,38 @@ export function energyFactor(energy: number): number {
  */
 export function sanityFactor(sanity: number): number {
   return SANITY_FACTOR_FLOOR + (1 - SANITY_FACTOR_FLOOR) * (sanity / 100);
+}
+
+/**
+ * Speed from mood: unhappy people work slower, but never stop.
+ *
+ * @param mood - 0-100.
+ * @returns The mood multiplier, 0.55-1.
+ */
+export function moodFactor(mood: number): number {
+  return MOOD_FACTOR_FLOOR + (1 - MOOD_FACTOR_FLOOR) * (mood / 100);
+}
+
+/**
+ * Speed lost to looking over their shoulder.
+ *
+ * @param recentSabotages - Times their code was broken in the last 30 min.
+ * @param persecuted - True while they think the company is against them.
+ * @param sanity - 0-100; a fraying mind is jumpier.
+ * @returns The paranoia multiplier, 0.5-1.
+ */
+export function paranoiaFactor(
+  recentSabotages: number,
+  persecuted: boolean,
+  sanity: number,
+): number {
+  const p = PARANOIA;
+  const factor =
+    1 -
+    p.perSabotage * Math.min(p.maxSabotages, recentSabotages) -
+    (persecuted ? p.persecuted : 0) -
+    (sanity < p.lowSanity ? p.lowSanityPenalty : 0);
+  return Math.max(p.floor, factor);
 }
 
 /**

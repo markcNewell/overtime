@@ -55,7 +55,7 @@ export function plantBug(
   const extra = Math.min(SABOTAGE.maxExtraSeverity, recent.length);
   const [title, detail] = BUGS[count % BUGS.length] ?? BUGS[0]!;
   const bug: HardPart = {
-    at: knockBack(project),
+    at: bugPosition(project, knockBack(project)),
     severity: (1 + extra) as Severity,
     title,
     detail,
@@ -77,6 +77,16 @@ function knockBack(project: Project): number {
   const floor = Math.min(project.progress, Math.max(0, ...reached));
   project.progress = Math.max(floor, project.progress - SABOTAGE.knockback);
   return project.progress;
+}
+
+/**
+ * Where the bug goes: where progress now is, or just ahead of any part they
+ * crept past while stuck, so the bug is always the next part they meet.
+ */
+function bugPosition(project: Project, progress: number): number {
+  const hit = new Set(project.hardPartsHit);
+  const waiting = project.hardParts.filter((_, i) => !hit.has(i)).map((p) => p.at);
+  return Math.min(progress, ...waiting);
 }
 
 /**

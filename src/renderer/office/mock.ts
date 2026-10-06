@@ -220,6 +220,7 @@ export function installMockApi(): void {
   const noop = async (): Promise<void> => undefined;
   const api: OvertimeApi = {
     getState: async () => state,
+    getVersion: async () => '0.0.0-mock',
     onState: () => () => undefined,
     onEffect: () => () => undefined,
     onOfficeTab: () => () => undefined,

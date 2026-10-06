@@ -34,6 +34,7 @@ let tab: OfficeTab = 'hire';
 let lastHtml = '';
 let claudeCheck: ClaudeCheck | undefined;
 let checkingClaude = false;
+let appVersion = '';
 /** Which candidate the hiring pager shows, and for which shortlist. */
 let candidateIndex = 0;
 let shortlistKey = '';
@@ -491,7 +492,8 @@ function settingsTab(s: GameState): string {
       <div class="row"><input type="text" id="files-dir" value="${esc(st.filesDir)}">
         <button data-action="save-files">Save</button>
         <button data-action="open" data-path="${esc(st.filesDir)}">Open</button></div></div>
-    <div class="setting"><span class="label">Show / hide the worker</span><kbd>${shortcut}</kbd></div>`;
+    <div class="setting"><span class="label">Show / hide the worker</span><kbd>${shortcut}</kbd></div>
+    <p class="note">Overtime ${esc(appVersion)}</p>`;
 }
 
 // ------------------------------------------------------------- rendering
@@ -684,6 +686,10 @@ api.onState((next) => {
   render();
 });
 api.onOfficeTab((next) => showTab(next));
+void api.getVersion().then((version) => {
+  appVersion = version;
+  if (tab === 'settings') render(true);
+});
 void api.getState().then((initial) => {
   state = initial;
   const query = new URLSearchParams(location.search).get('tab') as OfficeTab | null;

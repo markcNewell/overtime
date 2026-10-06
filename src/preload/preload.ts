@@ -15,6 +15,7 @@ function listen<T>(channel: string, cb: (value: T) => void): () => void {
 
 const api: OvertimeApi = {
   getState: () => ipcRenderer.invoke(CHANNELS.getState),
+  getVersion: () => ipcRenderer.invoke(CHANNELS.getVersion),
   onState: (cb) => listen(CHANNELS.state, cb),
   onEffect: (cb) => listen(CHANNELS.effect, cb),
   onOfficeTab: (cb) => listen(CHANNELS.officeTab, cb),

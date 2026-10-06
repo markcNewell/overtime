@@ -206,6 +206,7 @@ function registerIpc(
   runner: ClaudeRunner,
 ): void {
   ipcMain.handle(CHANNELS.getState, () => d.getState());
+  ipcMain.handle(CHANNELS.getVersion, () => app.getVersion());
   ipcMain.handle(CHANNELS.act, (_e, action: DirectAction) => {
     if (ACTIONS.includes(action?.type)) d.act(action);
   });

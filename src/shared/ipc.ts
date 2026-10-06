@@ -45,6 +45,8 @@ export interface ClaudeCheck {
 
 export interface OvertimeApi {
   getState(): Promise<GameState>;
+  /** The running app's version, e.g. "0.1.0-alpha.4". */
+  getVersion(): Promise<string>;
   /** Called with the full state after every change. Returns an unsubscribe. */
   onState(cb: (state: GameState) => void): () => void;
   onEffect(cb: (effect: Effect) => void): () => void;
@@ -85,6 +87,7 @@ export interface OvertimeApi {
 
 export const CHANNELS = {
   getState: 'overtime:get-state',
+  getVersion: 'overtime:get-version',
   state: 'overtime:state',
   effect: 'overtime:effect',
   act: 'overtime:act',

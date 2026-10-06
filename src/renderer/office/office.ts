@@ -656,9 +656,10 @@ document.addEventListener('change', (event) => {
   }
 });
 
-byId('close').addEventListener('click', () => window.close());
+// Hide, never window.close(): a page closing itself destroys the panel.
+byId('close').addEventListener('click', () => api.hideWindow());
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') window.close();
+  if (event.key === 'Escape') api.hideWindow();
 });
 
 api.onState((next) => {

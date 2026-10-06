@@ -30,6 +30,7 @@ const api: OvertimeApi = {
   openPath: (path) => ipcRenderer.send(CHANNELS.openPath, path),
   setInteractive: (on) => ipcRenderer.send(CHANNELS.setInteractive, on),
   focusWindow: () => ipcRenderer.send(CHANNELS.focusWindow),
+  hideWindow: () => ipcRenderer.send(CHANNELS.hideWindow),
   updateSettings: (patch) =>
     ipcRenderer.invoke(CHANNELS.updateSettings, patch),
   testClaude: () => ipcRenderer.invoke(CHANNELS.testClaude),

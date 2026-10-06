@@ -72,6 +72,11 @@ export interface OvertimeApi {
    * so a click into its chat box alone may not move focus on every OS.
    */
   focusWindow(): void;
+  /**
+   * Hide this window. The office panel must use this, not window.close():
+   * a page closing itself destroys its window outright.
+   */
+  hideWindow(): void;
   updateSettings(patch: Partial<Settings>): Promise<void>;
   testClaude(): Promise<ClaudeCheck>;
 }
@@ -91,6 +96,7 @@ export const CHANNELS = {
   openPath: 'overtime:open-path',
   setInteractive: 'overtime:set-interactive',
   focusWindow: 'overtime:focus-window',
+  hideWindow: 'overtime:hide-window',
   updateSettings: 'overtime:update-settings',
   testClaude: 'overtime:test-claude',
   officeTab: 'overtime:office-tab',

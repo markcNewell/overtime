@@ -232,6 +232,7 @@ export function installMockApi(): void {
     openPath: () => undefined,
     setInteractive: () => undefined,
     readComplaint: () => undefined,
+    hideWindow: () => undefined,
     replyToComplaint: noop,
     focusWindow: () => undefined,
     updateSettings: noop,

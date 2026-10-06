@@ -125,7 +125,7 @@ export class OfficeWindow {
    * itself, so it never steals the keyboard from whatever you're typing in.
    */
   open(tab: OfficeTab, focus = true): void {
-    const win = this.win ?? this.create();
+    const win = this.live ?? this.create();
     const send = (): void => win.webContents.send(CHANNELS.officeTab, tab);
     if (win.webContents.isLoading()) win.webContents.once('did-finish-load', send);
     else send();
@@ -139,13 +139,22 @@ export class OfficeWindow {
   }
 
   get window(): BrowserWindow | null {
-    return this.win;
+    return this.live;
+  }
+
+  /**
+   * The panel, unless something destroyed it (an OS close, a renderer
+   * crash), in which case the next open builds a fresh one.
+   */
+  private get live(): BrowserWindow | null {
+    return this.win && !this.win.isDestroyed() ? this.win : null;
   }
 
   /** Keep the panel's stacking and screen-share hiding in step with the overlay. */
   applySettings(settings: Settings): void {
     this.settings = settings;
-    if (this.win && !this.win.isDestroyed()) applyOverlaySettings(this.win, settings);
+    const win = this.live;
+    if (win) applyOverlaySettings(win, settings);
   }
 
   /** Let the window really close when the app quits. */
@@ -178,6 +187,9 @@ export class OfficeWindow {
       if (this.quitting) return;
       event.preventDefault();
       win.hide();
+    });
+    win.on('closed', () => {
+      if (this.win === win) this.win = null;
     });
     // Like a tray menu: click anywhere else and it tucks itself away.
     win.on('blur', () => {

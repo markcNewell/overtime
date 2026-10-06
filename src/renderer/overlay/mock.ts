@@ -489,6 +489,7 @@ export function installMock(name: string): { api: OvertimeApi; ui: MockUi } {
     openPath: (path) => console.log('[mock] openPath', path),
     setInteractive: (on) => console.log('[mock] setInteractive', on),
     focusWindow: () => console.log('[mock] focusWindow'),
+    hideWindow: () => console.log('[mock] hideWindow'),
     updateSettings: async () => undefined,
     testClaude: async () => ({ ok: true, message: 'mock' }),
   };

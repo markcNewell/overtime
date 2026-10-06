@@ -226,6 +226,9 @@ function registerIpc(
   ipcMain.on(CHANNELS.focusWindow, (e) => {
     BrowserWindow.fromWebContents(e.sender)?.focus();
   });
+  ipcMain.on(CHANNELS.hideWindow, (e) => {
+    BrowserWindow.fromWebContents(e.sender)?.hide();
+  });
 }
 
 /** Only accept known settings with the right types from a window. */

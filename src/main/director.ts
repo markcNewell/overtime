@@ -23,6 +23,7 @@ import type {
   Pitch,
   Project,
   Settings,
+  UpdateNotice,
 } from '../shared/types';
 
 const TICK_MS = 5_000;
@@ -774,6 +775,24 @@ export class Director {
     const line: ChatLine = { at: this.deps.now(), from, text };
     const chat = [...this.state.chat, line].slice(-CHAT_LOG_MAX);
     this.state = { ...this.state, chat };
+  }
+
+  // ---------------------------------------------------------------------
+  // Updates
+
+  /** A newer version of the app: show it, and let the worker mention it. */
+  setUpdate(notice: UpdateNotice): void {
+    this.state = { ...this.state, update: notice };
+    const worker = this.state.worker;
+    if (notice.stage !== 'downloading' && worker && worker.activity !== 'leaving') {
+      const line =
+        notice.stage === 'ready'
+          ? "Psst. There's a newer version of me. Restart when you're ready."
+          : 'Psst. A new version of me is out. Grab it from the office.';
+      this.setBubble(line, 'say');
+    }
+    this.addChat('system', `Overtime ${notice.version} is available.`);
+    this.commit();
   }
 
   // ---------------------------------------------------------------------

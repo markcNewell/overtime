@@ -166,6 +166,24 @@ h1 {
   color: var(--ink);
 }
 
+/* ------------------------------------------------------------ update */
+
+.update {
+  margin: 0 10px 6px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--good) 18%, var(--card));
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  padding: 5px 10px;
+}
+
+.update:disabled {
+  opacity: 0.8;
+}
+
 /* -------------------------------------------------------------- tabs */
 
 .tabs {

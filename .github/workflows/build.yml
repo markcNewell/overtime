@@ -50,9 +50,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: overtime-${{ matrix.os }}
+          # latest*.yml and .blockmap files let installed apps update themselves.
           path: |
             release/*.exe
             release/*.dmg
+            release/*.yml
+            release/*.blockmap
           if-no-files-found: error
 
   release:
@@ -76,15 +79,17 @@ jobs:
           A tiny cartoon developer for the corner of your screen. You'll need
           [Claude Code](https://claude.com/claude-code) installed and logged in.
 
-          **Windows:** download `Overtime-*-portable.exe` and run it (no install),
-          or `Overtime Setup *.exe` to install. SmartScreen may warn about an
-          unknown publisher: click **More info → Run anyway**.
+          **Windows:** download `Overtime-Setup-*.exe` to install it; the installed
+          app updates itself. `Overtime-*-portable.exe` runs without installing but
+          can't update itself (it tells you when there's a new one). SmartScreen
+          may warn about an unknown publisher: click **More info → Run anyway**.
 
           **macOS:** download the `-arm64.dmg` for Apple Silicon (M1 and later) or
           the plain `.dmg` for Intel, and drag Overtime to Applications. It isn't
           notarised, so the first launch is blocked: open **System Settings →
           Privacy & Security** and click **Open Anyway** (or run
-          `xattr -dr com.apple.quarantine /Applications/Overtime.app`).
+          `xattr -dr com.apple.quarantine /Applications/Overtime.app`). When a new
+          version is out it tells you and opens the download.
 
           It lives in the tray / menu bar. Show or hide the worker with
           Ctrl+Alt+Shift+O (⌘⌥⇧O on a Mac).

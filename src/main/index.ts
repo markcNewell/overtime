@@ -37,6 +37,7 @@ import type { Settings } from '../shared/types';
 import { Director, type FilesLike } from './director';
 import { defaultSettings, loadState, saveState } from './save';
 import { OvertimeTray } from './tray';
+import { Updater } from './updates';
 import {
   OfficeWindow,
   applyOverlaySettings,
@@ -152,36 +153,54 @@ async function main(): Promise<void> {
     void shell.openPath(dir);
   };
 
+  const updater = new Updater({
+    onNotice: (notice) => {
+      d.setUpdate(notice);
+      tray?.refresh();
+    },
+    log: (message, err) => console.error(`[overtime] ${message}`, err ?? ''),
+  });
+  /** Opening the office is a good moment to look for a new version. */
+  const openOffice = (tab: OfficeTab): void => {
+    office.open(tab);
+    updater.checkSoon();
+  };
+
   // Headless test runs on Linux have no tray to attach a menu to.
   const tray = process.env.OVERTIME_NO_TRAY
     ? undefined
     : new OvertimeTray({
         isOverlayVisible: () => overlay.isVisible(),
         toggleOverlay,
-        openOffice: (tab) => office.open(tab),
+        openOffice,
         settings: () => d.getState().settings,
+        update: () => d.getState().update,
+        installUpdate: () => updater.install(),
         updateSettings,
         openFilesFolder,
         quit: () => app.quit(),
       });
 
-  registerIpc(d, office, overlay, updateSettings, runner);
+  registerIpc(d, openOffice, overlay, updateSettings, runner);
+  ipcMain.on(CHANNELS.installUpdate, () => updater.install());
   globalShortcut.register(TOGGLE_SHORTCUT, toggleOverlay);
 
   app.on('second-instance', () => office.open('staff'));
   app.on('before-quit', () => {
     office.allowClose();
     d.stop();
+    updater.stop();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());
 
   d.start();
+  updater.start();
   if (!d.getState().worker) office.open('hire', false);
 }
 
 function registerIpc(
   d: Director,
-  office: OfficeWindow,
+  openOffice: (tab: OfficeTab) => void,
   overlay: BrowserWindow,
   updateSettings: (patch: Partial<Settings>) => Settings,
   runner: ClaudeRunner,
@@ -212,7 +231,7 @@ function registerIpc(
   ipcMain.handle(CHANNELS.testClaude, () => checkClaude(runner));
   ipcMain.on(CHANNELS.openOffice, (_e, tab: unknown) => {
     const valid = OFFICE_TABS.includes(tab as OfficeTab);
-    office.open(valid ? (tab as OfficeTab) : 'staff');
+    openOffice(valid ? (tab as OfficeTab) : 'staff');
   });
   ipcMain.on(CHANNELS.openPath, (_e, target: unknown) => {
     const dir = d.getState().settings.filesDir;

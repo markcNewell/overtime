@@ -283,6 +283,20 @@ export interface Settings {
 
 export type BrainStatus = 'ok' | 'thinking' | 'offline';
 
+/**
+ * A newer version of the app.
+ *
+ * - downloading: the installed Windows app is fetching it in the background.
+ * - ready: downloaded; restarting installs it.
+ * - download: this copy can't update itself (macOS, the portable exe), so
+ *   `url` is the download to open.
+ */
+export interface UpdateNotice {
+  version: string;
+  stage: 'downloading' | 'ready' | 'download';
+  url?: string;
+}
+
 export interface GameState {
   version: 1;
   worker?: Worker;
@@ -302,6 +316,8 @@ export interface GameState {
   lastTickAt: number;
   settings: Settings;
   brainStatus: BrainStatus;
+  /** Set when a newer version is out; never saved. */
+  update?: UpdateNotice;
 }
 
 export type BossAction =

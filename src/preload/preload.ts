@@ -31,6 +31,7 @@ const api: OvertimeApi = {
   setInteractive: (on) => ipcRenderer.send(CHANNELS.setInteractive, on),
   focusWindow: () => ipcRenderer.send(CHANNELS.focusWindow),
   hideWindow: () => ipcRenderer.send(CHANNELS.hideWindow),
+  installUpdate: () => ipcRenderer.send(CHANNELS.installUpdate),
   updateSettings: (patch) =>
     ipcRenderer.invoke(CHANNELS.updateSettings, patch),
   testClaude: () => ipcRenderer.invoke(CHANNELS.testClaude),

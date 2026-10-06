@@ -6,7 +6,7 @@
 import { Menu, Tray, nativeImage } from 'electron';
 import { join } from 'node:path';
 import type { OfficeTab } from '../shared/ipc';
-import type { Settings } from '../shared/types';
+import type { Settings, UpdateNotice } from '../shared/types';
 
 export interface TrayActions {
   isOverlayVisible(): boolean;
@@ -15,6 +15,8 @@ export interface TrayActions {
   settings(): Settings;
   updateSettings(patch: Partial<Settings>): void;
   openFilesFolder(): void;
+  update(): UpdateNotice | undefined;
+  installUpdate(): void;
   quit(): void;
 }
 
@@ -64,9 +66,21 @@ export class OvertimeTray {
       { type: 'separator' },
       { label: 'Open files folder', click: () => a.openFilesFolder() },
       { label: 'Settings...', click: () => a.openOffice('settings') },
+      ...this.updateItems(),
       { type: 'separator' },
       { label: 'Quit Overtime', click: () => a.quit() },
     ]);
     this.tray.setContextMenu(menu);
+  }
+
+  /** "Restart to update" or "Download …" once a newer version is out. */
+  private updateItems(): Electron.MenuItemConstructorOptions[] {
+    const notice = this.actions.update();
+    if (!notice || notice.stage === 'downloading') return [];
+    const label =
+      notice.stage === 'ready'
+        ? `Restart to update to ${notice.version}`
+        : `Download Overtime ${notice.version}`;
+    return [{ type: 'separator' }, { label, click: () => this.actions.installUpdate() }];
   }
 }

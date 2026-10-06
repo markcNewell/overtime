@@ -1,7 +1,7 @@
 {
   "name": "overtime",
   "productName": "Overtime",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "A tiny desktop office worker, powered by your Claude subscription, that you have to manage.",
   "author": "Mark Newell",
   "license": "UNLICENSED",
@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.4",
+    "@types/semver": "^7.8.0",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
@@ -63,10 +64,22 @@
     },
     "nsis": {
       "oneClick": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.exe"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "markcNewell",
+        "repo": "overtime"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "semver": "^7.8.5"
   }
 }

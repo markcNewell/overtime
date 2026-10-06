@@ -51,6 +51,8 @@ function withDefaults(state: GameState, settings: Settings): GameState {
     settings: { ...settings, ...state.settings },
     // Whatever the brain was doing when the app closed is long gone.
     brainStatus: 'ok',
+    // The updater re-checks on launch; an old notice may be out of date.
+    update: undefined,
   };
 }
 

@@ -521,6 +521,21 @@ function render(force = false): void {
   if (tab === 'inbox') restoreDrafts(focused);
 }
 
+/** The one-line "new version" banner under the masthead. */
+function renderUpdate(s: GameState): void {
+  const banner = byId<HTMLButtonElement>('update');
+  const notice = s.update;
+  banner.hidden = !notice;
+  if (!notice) return;
+  const labels = {
+    downloading: `Downloading Overtime ${notice.version}...`,
+    ready: `Overtime ${notice.version} is ready: restart to update`,
+    download: `Overtime ${notice.version} is out: download it`,
+  };
+  banner.textContent = labels[notice.stage];
+  banner.disabled = notice.stage === 'downloading';
+}
+
 /** Put half-written replies back after the DOM was rebuilt. */
 function restoreDrafts(focused: string | undefined): void {
   for (const box of content.querySelectorAll<HTMLTextAreaElement>('textarea[data-reply]')) {
@@ -542,6 +557,7 @@ function renderChrome(s: GameState): void {
   const labels = { ok: 'Claude connected', thinking: 'Thinking...', offline: 'Claude offline' };
   brain.title = labels[s.brainStatus];
   brain.className = `brain ${s.brainStatus}`;
+  renderUpdate(s);
   const unread = s.complaints.filter((c) => !c.readAt).length;
   const count = byId('inbox-count');
   count.hidden = unread === 0;
@@ -658,6 +674,7 @@ document.addEventListener('change', (event) => {
 
 // Hide, never window.close(): a page closing itself destroys the panel.
 byId('close').addEventListener('click', () => api.hideWindow());
+byId('update').addEventListener('click', () => api.installUpdate());
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') api.hideWindow();
 });

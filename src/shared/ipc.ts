@@ -77,6 +77,8 @@ export interface OvertimeApi {
    * a page closing itself destroys its window outright.
    */
   hideWindow(): void;
+  /** Restart into a downloaded update, or open its download. */
+  installUpdate(): void;
   updateSettings(patch: Partial<Settings>): Promise<void>;
   testClaude(): Promise<ClaudeCheck>;
 }
@@ -97,6 +99,7 @@ export const CHANNELS = {
   setInteractive: 'overtime:set-interactive',
   focusWindow: 'overtime:focus-window',
   hideWindow: 'overtime:hide-window',
+  installUpdate: 'overtime:install-update',
   updateSettings: 'overtime:update-settings',
   testClaude: 'overtime:test-claude',
   officeTab: 'overtime:office-tab',

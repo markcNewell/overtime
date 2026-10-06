@@ -59,6 +59,15 @@ npm start
 It appears in the system tray (Windows) or menu bar (macOS). Show or hide the
 worker with **Ctrl+Alt+Shift+O** (**⌘⌥⇧O** on a Mac).
 
+## Updates
+
+Get the latest from the [releases page](https://github.com/markcNewell/overtime/releases).
+The installed Windows app (`Overtime-Setup-*.exe`) updates itself: it downloads
+new versions in the background and installs them when you restart (or click
+**Restart to update** in the tray or the office). The Mac app and the portable
+Windows exe can't replace themselves, so they tell you when a new version is out
+and open the right download.
+
 ## Build an installer
 
 ```bash

@@ -13,9 +13,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "icons": "electron --ozone-platform=headless --no-sandbox scripts/make-icons.cjs",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win-portable": "npm run build && electron-builder --win portable --x64 -c.win.signAndEditExecutable=false",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win-portable": "npm run build && electron-builder --win portable --x64 --publish never -c.win.signAndEditExecutable=false",
     "preview:office": "npm run build && electron --ozone-platform=headless --no-sandbox scripts/preview-office.cjs",
     "e2e": "npm run build && node scripts/e2e-smoke.mjs"
   },

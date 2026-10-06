@@ -27,6 +27,8 @@ jobs:
   build:
     needs: test
     strategy:
+      # One platform failing shouldn't throw away the other's build.
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest

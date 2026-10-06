@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# GitHub sometimes starts two runs for one tag; let them queue, not race.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -94,8 +99,13 @@ jobs:
           It lives in the tray / menu bar. Show or hide the worker with
           Ctrl+Alt+Shift+O (⌘⌥⇧O on a Mac).
           EOF
-          gh release create "$TAG" installers/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Overtime $TAG" \
-            --notes-file notes.md \
-            $pre
+          # A re-run (or a duplicate run) refreshes the files instead of failing.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" installers/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" installers/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Overtime $TAG" \
+              --notes-file notes.md \
+              $pre
+          fi
